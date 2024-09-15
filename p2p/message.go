@@ -2,10 +2,10 @@ package p2p
 
 import "net"
 
-// Message holds any arbitary data that is sent across
+// RPC holds any arbitary data that is sent across
 // TCPtransport between two nodes in a network
 
-type Message struct {
+type RPC struct {
 	From    net.Addr
 	Payload []byte
 }
