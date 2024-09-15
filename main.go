@@ -8,9 +8,14 @@ import (
 )
 
 func main() {
-	TCPTransport := p2p.NewTCPTransport(":3000")
+	tcpOpts := p2p.TCPTransportOptions{
+		ListenAddress: ":3000",
+		HandShakeFunc: p2p.NOTHandShakeFunc,
+		Decoder:       p2p.DefaultDecoder{},
+	}
+	tcpTransport := p2p.NewTCPTransport(tcpOpts)
 
-	if err := TCPTransport.ListenAndAccept(); err != nil {
+	if err := tcpTransport.ListenAndAccept(); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println("Hello, World!")
