@@ -20,52 +20,54 @@ func TestPathTransformFunc(t *testing.T) {
 	}
 }
 
-func TestStoreDelete(t *testing.T) {
-	opts := StoreOptions{
-		PathTransformFunc: CASPathTransformFunc,
-	}
-	s := NewStore(opts)
+func TestStore(t *testing.T) {
+	s := newStore()
+	defer teardown(t, s)
 
-	key := "myspecialdata"
+	for i := 0; i < 100; i++ {
+		key := fmt.Sprintf("myspecialdata_%d", i)
 
-	data := []byte("some data")
-	if err := s.writeStream(key, bytes.NewReader(data)); err != nil {
-		t.Fatalf("writeStream failed: %v", err)
-	}
+		data := []byte("some data")
+		if err := s.writeStream(key, bytes.NewReader(data)); err != nil {
+			t.Fatalf("writeStream failed: %v", err)
+		}
 
-	if err := s.Delete(key); err != nil {
-		t.Fatalf("Delete failed: %v", err)
-	}
+		ok := s.Has(key)
+		if !ok {
+			t.Fatalf("Key not found")
+		}
 
-	if _, err := s.Read(key); err == nil {
-		t.Fatalf("Read should have failed")
+		r, err := s.Read(key)
+		if err != nil {
+			t.Fatalf("Read failed: %v", err)
+		}
+
+		b, _ := io.ReadAll(r)
+		fmt.Println(string(b))
+		if string(b) != string(data) {
+			t.Fatalf("expected %s, got %s", string(data), string(b))
+		}
+
+		if err := s.Delete(key); err != nil {
+			t.Fatalf("Delete failed: %v", err)
+		}
+
+		if ok := s.Has(key); ok {
+			t.Fatalf("Key should have been deleted")
+		}
 	}
 }
 
-func TestStore(t *testing.T) {
+func newStore() *Store {
 	opts := StoreOptions{
 		PathTransformFunc: CASPathTransformFunc,
 	}
-	s := NewStore(opts)
+	return NewStore(opts)
+}
 
-	key := "myspecialdata"
-
-	data := []byte("some data")
-	if err := s.writeStream(key, bytes.NewReader(data)); err != nil {
-		t.Fatalf("writeStream failed: %v", err)
+func teardown(t *testing.T, s *Store) {
+	t.Helper()
+	if err := s.Clear(); err != nil {
+		t.Error(err)
 	}
-
-	r, err := s.Read(key)
-	if err != nil {
-		t.Fatalf("Read failed: %v", err)
-	}
-
-	b, _ := io.ReadAll(r)
-	fmt.Println(string(b))
-
-	if string(b) != string(data) {
-		t.Fatalf("expected %s, got %s", string(data), string(b))
-	}
-
-	s.Delete(key)
 }
