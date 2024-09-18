@@ -1,9 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"log"
+	"os"
 	"strings"
 )
 
@@ -61,4 +65,56 @@ func NewStore(opts StoreOptions) *Store {
 	return &Store{
 		StoreOptions: opts,
 	}
+}
+
+func (s *Store) Delete(key string) error {
+	pathKey := s.PathTransformFunc(key)
+
+	defer func() {
+		log.Printf("deleted [%s] from disk", pathKey.FileName)
+	}()
+
+	return os.RemoveAll(pathKey.FirstPathName())
+}
+
+func (s *Store) Read(key string) (io.Reader, error) {
+	f, err := s.readStream(key)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	buf := new(bytes.Buffer)
+	_, err = io.Copy(buf, f)
+
+	return buf, err
+}
+
+func (s *Store) readStream(key string) (io.ReadCloser, error) {
+	pathKey := s.PathTransformFunc(key)
+	return os.Open(pathKey.FullPathName())
+}
+
+func (s *Store) writeStream(key string, r io.Reader) error {
+	pathKey := s.PathTransformFunc(key)
+
+	if err := os.MkdirAll(pathKey.PathName, os.ModePerm); err != nil {
+		return err
+	}
+
+	FullPathName := pathKey.FullPathName()
+
+	f, err := os.Create(FullPathName)
+	if err != nil {
+		return err
+	}
+
+	n, err := io.Copy(f, r)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Wrote %d bytes to %s", n, FullPathName)
+
+	return nil
 }
