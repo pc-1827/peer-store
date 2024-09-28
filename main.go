@@ -1,37 +1,49 @@
 package main
 
 import (
+	"bytes"
 	"log"
 	"time"
 
 	"github.com/pc-1827/distributed-file-system/p2p"
 )
 
-func main() {
+func makeServer(listenAddress string, nodes ...string) *FileServer {
 	tcpTransportOptions := p2p.TCPTransportOptions{
-		ListenAddress: ":3000",
+		ListenAddress: listenAddress,
 		HandShakeFunc: p2p.NOTHandShakeFunc,
 		Decoder:       p2p.DefaultDecoder{},
-		// OnPeer func
 	}
 	tcpTransport := p2p.NewTCPTransport(tcpTransportOptions)
 
 	FileServerOptions := FileServerOptions{
-		StorageRoot:       ":3000_network",
+		StorageRoot:       listenAddress + "_network",
 		PathTransformFunc: CASPathTransformFunc,
 		Transport:         tcpTransport,
+		BootstrapNodes:    nodes,
 	}
 
-	s := NewFileServer(FileServerOptions)
+	server := NewFileServer(FileServerOptions)
+	tcpTransport.OnPeer = server.OnPeer
+	return server
+}
 
+func main() {
+	server1 := makeServer(":3000", "")
+	server2 := makeServer(":4000", ":3000")
 	go func() {
-		time.Sleep(time.Second * 5)
-		s.Stop()
+		log.Fatal(server1.Start())
 	}()
 
-	if err := s.Start(); err != nil {
-		log.Fatal(err)
-	}
+	time.Sleep(1 * time.Second)
+	go server2.Start()
+	time.Sleep(1 * time.Second)
+
+	data := bytes.NewReader([]byte("My big data file here!"))
+
+	server2.StoreData("bigdata", data)
+
+	select {}
 }
 
 // func OnPeer(peer p2p.Peer) error {
