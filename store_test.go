@@ -28,7 +28,8 @@ func TestStore(t *testing.T) {
 		key := fmt.Sprintf("myspecialdata_%d", i)
 
 		data := []byte("some data")
-		if err := s.writeStream(key, bytes.NewReader(data)); err != nil {
+		_, err := s.writeStream(key, bytes.NewReader(data))
+		if err != nil {
 			t.Fatalf("writeStream failed: %v", err)
 		}
 
@@ -37,7 +38,7 @@ func TestStore(t *testing.T) {
 			t.Fatalf("Key not found")
 		}
 
-		r, err := s.Read(key)
+		_, r, err := s.Read(key)
 		if err != nil {
 			t.Fatalf("Read failed: %v", err)
 		}

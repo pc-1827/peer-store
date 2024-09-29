@@ -1,7 +1,8 @@
 package main
 
 import (
-	"bytes"
+	"fmt"
+	"io"
 	"log"
 	"time"
 
@@ -39,11 +40,22 @@ func main() {
 	go server2.Start()
 	time.Sleep(1 * time.Second)
 
-	data := bytes.NewReader([]byte("My big data file here!"))
+	// data := bytes.NewReader([]byte("My big data file here!"))
 
-	server2.StoreData("bigdata", data)
+	// server2.Store("random_picture.jpeg", data)
+	// time.Sleep(5 * time.Millisecond)
 
-	select {}
+	r, err := server2.Get("random_picture.jpeg")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	b, err := io.ReadAll(r)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(string(b))
 }
 
 // func OnPeer(peer p2p.Peer) error {
