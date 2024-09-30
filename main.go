@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -18,6 +19,7 @@ func makeServer(listenAddress string, nodes ...string) *FileServer {
 	tcpTransport := p2p.NewTCPTransport(tcpTransportOptions)
 
 	FileServerOptions := FileServerOptions{
+		EncKey:            newEncryptionKey(),
 		StorageRoot:       listenAddress + "_network",
 		PathTransformFunc: CASPathTransformFunc,
 		Transport:         tcpTransport,
@@ -31,31 +33,39 @@ func makeServer(listenAddress string, nodes ...string) *FileServer {
 
 func main() {
 	server1 := makeServer(":3000", "")
-	server2 := makeServer(":4000", ":3000")
-	go func() {
-		log.Fatal(server1.Start())
-	}()
+	server2 := makeServer(":4000", "")
+	server3 := makeServer(":5000", ":3000", ":4000")
+	go func() { log.Fatal(server1.Start()) }()
+	time.Sleep(500 * time.Millisecond)
+	go func() { log.Fatal(server2.Start()) }()
 
 	time.Sleep(1 * time.Second)
-	go server2.Start()
+	go server3.Start()
 	time.Sleep(1 * time.Second)
 
-	// data := bytes.NewReader([]byte("My big data file here!"))
+	for i := 0; i < 20; i++ {
+		key := fmt.Sprintf("random_picture_%d.jpeg", i)
+		data := bytes.NewReader([]byte("My big data file here!"))
 
-	// server2.Store("random_picture.jpeg", data)
-	// time.Sleep(5 * time.Millisecond)
+		server3.Store(key, data)
+		time.Sleep(5 * time.Millisecond)
 
-	r, err := server2.Get("random_picture.jpeg")
-	if err != nil {
-		log.Fatal(err)
+		if err := server3.store.Delete(server3.ID, key); err != nil {
+			log.Fatal(err)
+		}
+
+		r, err := server3.Get(key)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		b, err := io.ReadAll(r)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		fmt.Println(string(b))
 	}
-
-	b, err := io.ReadAll(r)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Println(string(b))
 }
 
 // func OnPeer(peer p2p.Peer) error {
