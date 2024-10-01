@@ -43,9 +43,13 @@ func main() {
 	go server3.Start()
 	time.Sleep(1 * time.Second)
 
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 1; i++ {
 		key := fmt.Sprintf("random_picture_%d.jpeg", i)
-		data := bytes.NewReader([]byte("My big data file here!"))
+		data_string := ""
+		for i := 0; i < 100; i++ {
+			data_string = data_string + fmt.Sprintf("abcdefghijklmnopqrstuvwxyz_%d_random_bullshit", i)
+		}
+		data := bytes.NewReader([]byte(data_string))
 
 		server3.Store(key, data)
 		time.Sleep(5 * time.Millisecond)
@@ -59,12 +63,16 @@ func main() {
 			log.Fatal(err)
 		}
 
+		if err := server3.Remove(key); err != nil {
+			log.Fatal(err)
+		}
+
 		b, err := io.ReadAll(r)
 		if err != nil {
 			log.Fatal(err)
 		}
-
-		fmt.Println(string(b))
+		fmt.Printf("Length of string is: %d\n", len(b))
+		//fmt.Println(string(b))
 	}
 }
 

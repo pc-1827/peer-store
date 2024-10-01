@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"strings"
 )
@@ -43,13 +42,13 @@ func (p PathKey) FullPathName() string {
 	return fmt.Sprintf("%s/%s", p.PathName, p.FileName)
 }
 
-func (p PathKey) FirstPathName() string {
-	paths := strings.Split(p.PathName, "/")
-	if len(paths) == 0 {
-		return ""
-	}
-	return paths[0]
-}
+// func (p PathKey) FirstPathName() string {
+// 	paths := strings.Split(p.PathName, "/")
+// 	if len(paths) == 0 {
+// 		return ""
+// 	}
+// 	return paths[0]
+// }
 
 type StoreOptions struct {
 	Root              string
@@ -91,14 +90,14 @@ func (s *Store) Has(id string, key string) bool {
 }
 
 func (s *Store) Delete(id string, key string) error {
-	pathKey := s.PathTransformFunc(key)
+	//pathKey := s.PathTransformFunc(key)
 
-	defer func() {
-		log.Printf("deleted [%s] from disk", pathKey.FileName)
-	}()
+	// defer func() {
+	// 	log.Printf("deleted [%s] from disk\n", pathKey.FileName)
+	// }()
 
-	FirstPathNameWithRoot := fmt.Sprintf("%s/%s/%s", s.Root, id, pathKey.FirstPathName())
-	return os.RemoveAll(FirstPathNameWithRoot)
+	IDWithRoot := fmt.Sprintf("%s/%s", s.Root, id)
+	return os.RemoveAll(IDWithRoot)
 }
 
 func (s *Store) Read(id string, key string) (int64, io.Reader, error) {

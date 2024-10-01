@@ -53,12 +53,6 @@ type Message struct {
 	Payload any
 }
 
-type MessageStoreFile struct {
-	ID   string
-	Key  string
-	Size int64
-}
-
 func (s *FileServer) broadcast(msg *Message) error {
 	buf := new(bytes.Buffer)
 	if err := gob.NewEncoder(buf).Encode(msg); err != nil {
@@ -116,13 +110,19 @@ func (s *FileServer) Get(key string) (io.Reader, error) {
 		// 	return nil, err
 		// }
 
-		fmt.Printf("[%s] received %d bytes over the network from (%s): ", s.Transport.Addr(), n, peer.RemoteAddr())
+		fmt.Printf("[%s] received %d bytes over the network from (%s):\n ", s.Transport.Addr(), n, peer.RemoteAddr())
 
 		peer.CloseStream()
 	}
 
 	_, r, err := s.store.Read(s.ID, key)
 	return r, err
+}
+
+type MessageStoreFile struct {
+	ID   string
+	Key  string
+	Size int64
 }
 
 func (s *FileServer) Store(key string, r io.Reader) error {
@@ -161,7 +161,7 @@ func (s *FileServer) Store(key string, r io.Reader) error {
 		return err
 	}
 
-	fmt.Printf("[%s] received and written (%d) bytes to the disk", s.Transport.Addr(), n)
+	fmt.Printf("[%s] received and written (%d) bytes to the disk\n", s.Transport.Addr(), n)
 	return nil
 	// buf := new(bytes.Buffer)
 	// tee := io.TeeReader(r, buf)
@@ -181,6 +181,34 @@ func (s *FileServer) Store(key string, r io.Reader) error {
 	// 	From:    "todo",
 	// 	Payload: p,
 	// })
+}
+
+type MessageDeleteFile struct {
+	ID  string
+	Key string
+}
+
+func (s *FileServer) Remove(key string) error {
+	msg := Message{
+		Payload: MessageDeleteFile{
+			ID:  s.ID,
+			Key: hashKey(key),
+		},
+	}
+
+	if err := s.broadcast(&msg); err != nil {
+		return err
+	}
+
+	if err := s.store.Delete(s.ID, key); err != nil {
+		return fmt.Errorf("[%s] Failed to delete file (%s) from the disk: ", s.Transport.Addr(), key)
+	}
+
+	fmt.Printf("[%s] Deleting (%s) from the disk\n", s.Transport.Addr(), s.ID)
+
+	time.Sleep(time.Second * 1)
+
+	return nil
 }
 
 func (s *FileServer) Start() error {
@@ -216,6 +244,8 @@ func (s *FileServer) handleMessage(from string, msg *Message) error {
 		return s.handleMessageStoreFile(from, v)
 	case MessageGetFile:
 		return s.handleMessageGetFile(from, v)
+	case MessageDeleteFile:
+		return s.handleMessageDeleteFile(v)
 	}
 
 	return nil
@@ -271,6 +301,14 @@ func (s *FileServer) handleMessageStoreFile(from string, msg MessageStoreFile) e
 	//peer.(*p2p.TCPPeer).Wg.Done()
 	peer.CloseStream()
 
+	return nil
+}
+
+func (s *FileServer) handleMessageDeleteFile(msg MessageDeleteFile) error {
+	if err := s.store.Delete(msg.ID, msg.Key); err != nil {
+		return fmt.Errorf("[%s] Failed to delete file (%s) from the disk: ", s.Transport.Addr(), msg.Key)
+	}
+	fmt.Printf("[%s] Deleting from the disk\n", s.Transport.Addr())
 	return nil
 }
 
@@ -333,4 +371,5 @@ func (s *FileServer) loop() {
 func init() {
 	gob.Register(MessageStoreFile{})
 	gob.Register(MessageGetFile{})
+	gob.Register(MessageDeleteFile{})
 }
