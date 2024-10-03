@@ -1,10 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"time"
 
 	"github.com/pc-1827/distributed-file-system/p2p"
@@ -44,14 +44,22 @@ func main() {
 	time.Sleep(1 * time.Second)
 
 	for i := 0; i < 1; i++ {
-		key := fmt.Sprintf("random_picture_%d.jpeg", i)
-		data_string := ""
-		for i := 0; i < 100; i++ {
-			data_string = data_string + fmt.Sprintf("abcdefghijklmnopqrstuvwxyz_%d_random_bullshit", i)
-		}
-		data := bytes.NewReader([]byte(data_string))
+		// key := fmt.Sprintf("random_picture_%d.jpeg", i)
+		// data_string := "random_bullshit"
+		// for i := 0; i < 100; i++ {
+		// 	data_string = data_string + fmt.Sprintf("abcdefghijklmnopqrstuvwxyz_%d_random_bullshit", i)
+		// }
+		// data := bytes.NewReader([]byte(data_string))
 
-		server3.Store(key, data)
+		filePath := "test_files/big-file"
+		file, err := os.Open(filePath)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer file.Close()
+
+		key := "test-6.png"
+		server3.Store(key, file)
 		time.Sleep(5 * time.Millisecond)
 
 		if err := server3.store.Delete(server3.ID, key); err != nil {
@@ -63,46 +71,16 @@ func main() {
 			log.Fatal(err)
 		}
 
-		if err := server3.Remove(key); err != nil {
-			log.Fatal(err)
-		}
+		// if err := server3.Remove(key); err != nil {
+		// 	log.Fatal(err)
+		// }
 
 		b, err := io.ReadAll(r)
 		if err != nil {
 			log.Fatal(err)
 		}
+
 		fmt.Printf("Length of string is: %d\n", len(b))
 		//fmt.Println(string(b))
 	}
 }
-
-// func OnPeer(peer p2p.Peer) error {
-// 	//return fmt.Errorf("failed to onpeer connection")
-// 	peer.Close()
-// 	//fmt.Print("Peer connected\n")
-// 	return nil
-// }
-
-// func main() {
-// 	tcpOpts := p2p.TCPTransportOptions{
-// 		ListenAddress: ":3000",
-// 		HandShakeFunc: p2p.NOTHandShakeFunc,
-// 		Decoder:       p2p.DefaultDecoder{},
-// 		OnPeer:        OnPeer,
-// 	}
-// 	tcpTransport := p2p.NewTCPTransport(tcpOpts)
-
-// 	go func() {
-// 		for {
-// 			msg := <-tcpTransport.Consume()
-// 			fmt.Printf("Received message from %v: %v\n", msg.From, string(msg.Payload))
-// 		}
-// 	}()
-
-// 	if err := tcpTransport.ListenAndAccept(); err != nil {
-// 		log.Fatal(err)
-// 	}
-// 	fmt.Println("Hello, World!")
-
-// 	select {}
-// }

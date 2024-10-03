@@ -42,14 +42,6 @@ func (p PathKey) FullPathName() string {
 	return fmt.Sprintf("%s/%s", p.PathName, p.FileName)
 }
 
-// func (p PathKey) FirstPathName() string {
-// 	paths := strings.Split(p.PathName, "/")
-// 	if len(paths) == 0 {
-// 		return ""
-// 	}
-// 	return paths[0]
-// }
-
 type StoreOptions struct {
 	Root              string
 	PathTransformFunc PathTransformFunc
@@ -102,20 +94,6 @@ func (s *Store) Delete(id string, key string) error {
 
 func (s *Store) Read(id string, key string) (int64, io.Reader, error) {
 	return s.readStream(id, key)
-	// n, f, err := s.readStream(key)
-	// if err != nil {
-	// 	return n, nil, err
-	// }
-	// defer f.Close()
-
-	// buf := new(bytes.Buffer)
-	// _, err = io.Copy(buf, f)
-
-	// return n, buf, err
-}
-
-func (s *Store) Write(id string, key string, r io.Reader) (int64, error) {
-	return s.writeStream(id, key, r)
 }
 
 func (s *Store) readStream(id string, key string) (int64, io.ReadCloser, error) {
@@ -133,6 +111,10 @@ func (s *Store) readStream(id string, key string) (int64, io.ReadCloser, error) 
 	}
 
 	return fi.Size(), file, nil
+}
+
+func (s *Store) Write(id string, key string, r io.Reader) (int64, error) {
+	return s.writeStream(id, key, r)
 }
 
 func (s *Store) WriteDecrypt(encKey []byte, id string, key string, r io.Reader) (int64, error) {

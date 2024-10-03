@@ -74,6 +74,11 @@ type MessageGetFile struct {
 	Key string
 }
 
+// Takes a key(file Name) and returns a Reader(data), checks if file is present
+// locally using store.Has func, if yes then reads the files and returns a Reader.
+// If not, then prepares a message and broadcasts to all peers reads the incoming
+// binary data, decrypts and writes it to the local disk, and returns a reader to
+// that received file.
 func (s *FileServer) Get(key string) (io.Reader, error) {
 	if s.store.Has(s.ID, key) {
 		fmt.Printf("[%s] serving file (%s) from the local disk\n", s.Transport.Addr(), key)
@@ -100,15 +105,9 @@ func (s *FileServer) Get(key string) (io.Reader, error) {
 		var fileSize int64
 		binary.Read(peer, binary.LittleEndian, &fileSize)
 		n, err := s.store.WriteDecrypt(s.EncKey, s.ID, key, io.LimitReader(peer, fileSize))
-		// n, err := s.store.Write(key, io.LimitReader(peer, fileSize))
 		if err != nil {
 			return nil, err
 		}
-		// fileBuffer := new(bytes.Buffer)
-		// n, err := io.CopyN(fileBuffer, peer, 22)
-		// if err != nil {
-		// 	return nil, err
-		// }
 
 		fmt.Printf("[%s] received %d bytes over the network from (%s):\n ", s.Transport.Addr(), n, peer.RemoteAddr())
 
@@ -125,6 +124,9 @@ type MessageStoreFile struct {
 	Size int64
 }
 
+// Takes a key(file name) and a Reader(data) writes the data to the disk,
+// prepares and broadcasts a message to all peers to prepare them for receiving
+// data, then writes encrypted data to the stream to all peers.
 func (s *FileServer) Store(key string, r io.Reader) error {
 	var (
 		fileBuffer = new(bytes.Buffer)
@@ -163,24 +165,6 @@ func (s *FileServer) Store(key string, r io.Reader) error {
 
 	fmt.Printf("[%s] received and written (%d) bytes to the disk\n", s.Transport.Addr(), n)
 	return nil
-	// buf := new(bytes.Buffer)
-	// tee := io.TeeReader(r, buf)
-
-	// if err := s.store.Write(key, tee); err != nil {
-	// 	return err
-	// }
-
-	// p := &DataMessage{
-	// 	Key:  key,
-	// 	Data: buf.Bytes(),
-	// }
-
-	// //fmt.Println(buf.Bytes())
-
-	// return s.broadcast(&Message{
-	// 	From:    "todo",
-	// 	Payload: p,
-	// })
 }
 
 type MessageDeleteFile struct {
@@ -188,6 +172,9 @@ type MessageDeleteFile struct {
 	Key string
 }
 
+// Takes a key(file name) to be deleted in the peer network, prepares
+// and broadcasts a message to all peers. Deletes the key on local disk
+// using the store.Delete func.
 func (s *FileServer) Remove(key string) error {
 	msg := Message{
 		Payload: MessageDeleteFile{
@@ -251,6 +238,8 @@ func (s *FileServer) handleMessage(from string, msg *Message) error {
 	return nil
 }
 
+// Checks if the requested file is present or not. If present reads the file,
+// and writes the encrypted binary data to the peer message was sent from.
 func (s *FileServer) handleMessageGetFile(from string, msg MessageGetFile) error {
 	if !s.store.Has(msg.ID, msg.Key) {
 		return fmt.Errorf("[%s] file (%s) is not present in the disk", s.Transport.Addr(), msg.Key)
@@ -284,8 +273,9 @@ func (s *FileServer) handleMessageGetFile(from string, msg MessageGetFile) error
 	return nil
 }
 
+// Gets the peer in the received message and writes the data received to
+// the local disk.
 func (s *FileServer) handleMessageStoreFile(from string, msg MessageStoreFile) error {
-	//fmt.Printf("recv store file msg %v: %+v\n", from, msg)
 	peer, ok := s.peers[from]
 	if !ok {
 		return fmt.Errorf("peer (%s) could not be found in the peer list", from)
@@ -298,12 +288,13 @@ func (s *FileServer) handleMessageStoreFile(from string, msg MessageStoreFile) e
 
 	fmt.Printf("[%s] written %d bytes to the disk\n", s.Transport.Addr(), n)
 
-	//peer.(*p2p.TCPPeer).Wg.Done()
 	peer.CloseStream()
 
 	return nil
 }
 
+// Finds the file to delete from the received message and then calls the
+// store.Delete function to remove from the local disk
 func (s *FileServer) handleMessageDeleteFile(msg MessageDeleteFile) error {
 	if err := s.store.Delete(msg.ID, msg.Key); err != nil {
 		return fmt.Errorf("[%s] Failed to delete file (%s) from the disk: ", s.Transport.Addr(), msg.Key)
@@ -343,25 +334,6 @@ func (s *FileServer) loop() {
 			if err := s.handleMessage(rpc.From, &msg); err != nil {
 				log.Println("handle message error:", err)
 			}
-			// fmt.Printf("payload: %+v\n", msg.Payload)
-			// //fmt.Printf("Received: %s\n", string(msg.Payload.([]byte)))
-
-			// peer, ok := s.peers[rpc.From]
-			// if !ok {
-			// 	panic("peer not found in peer map")
-			// }
-
-			// b := make([]byte, 1000)
-			// if _, err := peer.Read(b); err != nil {
-			// 	panic(err)
-			// }
-			// // if err := s.handleMessage(&m); err != nil {
-			// // 	log.Println(err)
-
-			// // }
-			// fmt.Printf("%s\n", string(b))
-
-			// peer.(*p2p.TCPPeer).Wg.Done()
 		case <-s.quitch:
 			return
 		}
