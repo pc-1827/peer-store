@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"sync"
 	"time"
 
@@ -19,7 +20,7 @@ type FileServerOptions struct {
 	StorageRoot       string
 	PathTransformFunc PathTransformFunc
 	Transport         p2p.Transport
-	BootstrapNodes    []string
+	//BootstrapNodes    []string
 }
 
 type FileServer struct {
@@ -27,6 +28,7 @@ type FileServer struct {
 
 	peerLock sync.Mutex
 	peers    map[string]p2p.Peer
+	network  []string
 
 	store  *Store
 	quitch chan struct{}
@@ -46,6 +48,7 @@ func NewFileServer(opts FileServerOptions) *FileServer {
 		store:             NewStore(StoreOptions),
 		quitch:            make(chan struct{}),
 		peers:             make(map[string]p2p.Peer),
+		network:           []string{},
 	}
 }
 
@@ -64,6 +67,20 @@ func (s *FileServer) broadcast(msg *Message) error {
 		if err := peer.Send(buf.Bytes()); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+func (s *FileServer) sendMessage(peer p2p.Peer, msg *Message) error {
+	buf := new(bytes.Buffer)
+	if err := gob.NewEncoder(buf).Encode(msg); err != nil {
+		return err
+	}
+
+	peer.Send([]byte{p2p.IncomingMessage})
+	if err := peer.Send(buf.Bytes()); err != nil {
+		return err
 	}
 
 	return nil
@@ -198,12 +215,70 @@ func (s *FileServer) Remove(key string) error {
 	return nil
 }
 
+type MessageAddFile struct {
+	Addr      string
+	LocalAddr string
+	PeerMap   []string
+}
+
+func (s *FileServer) Add(addr string) error {
+	var remoteAddr net.Addr
+	var err error
+
+	if len(s.network) == 0 {
+		s.network = append(s.network, s.Transport.Addr())
+	}
+	s.network = append(s.network, addr)
+	msg := Message{
+		Payload: MessageAddFile{
+			Addr:      "",
+			LocalAddr: s.Transport.Addr(),
+			PeerMap:   s.network,
+		},
+	}
+
+	s.broadcast(&msg)
+
+	if len(addr) == 0 {
+		return fmt.Errorf("address is empty")
+	}
+
+	fmt.Printf("[%s] Attempting to dial: (%s)\n", s.Transport.Addr(), addr)
+	go func(addr string) {
+		remoteAddr, err = s.Transport.Dial(addr)
+		if err != nil {
+			log.Printf("Failed to dial %s: %s\n", addr, err)
+		}
+	}(addr)
+
+	time.Sleep(500 * time.Millisecond)
+
+	// fmt.Printf("Peer Address: %s\n", peer.RemoteAddr().String())
+	// fmt.Printf("Peer Map: %s\n", peersMap)
+
+	peer, ok := s.peers[remoteAddr.String()]
+	if !ok {
+		return fmt.Errorf("peer not found")
+	}
+
+	msg = Message{
+		Payload: MessageAddFile{
+			Addr:      remoteAddr.String(),
+			LocalAddr: s.Transport.Addr(),
+			PeerMap:   s.network,
+		},
+	}
+
+	s.sendMessage(peer, &msg)
+	return nil
+}
+
 func (s *FileServer) Start() error {
 	if err := s.Transport.ListenAndAccept(); err != nil {
 		return err
 	}
 
-	s.bootstrapNetwork()
+	//s.bootstrapNetwork()
 
 	s.loop()
 	return nil
@@ -221,7 +296,7 @@ func (s *FileServer) OnPeer(p p2p.Peer) error {
 
 	s.peers[p.RemoteAddr().String()] = p
 
-	log.Printf("Peer connected: %s\n", p.RemoteAddr().String())
+	log.Printf("[%s]: Peer connected: %s\n", p.LocalAddr().String(), p.RemoteAddr().String())
 	return nil
 }
 
@@ -233,6 +308,8 @@ func (s *FileServer) handleMessage(from string, msg *Message) error {
 		return s.handleMessageGetFile(from, v)
 	case MessageDeleteFile:
 		return s.handleMessageDeleteFile(v)
+	case MessageAddFile:
+		return s.handleMessageAddFile(from, v)
 	}
 
 	return nil
@@ -255,6 +332,8 @@ func (s *FileServer) handleMessageGetFile(from string, msg MessageGetFile) error
 		fmt.Println("closing the read closer")
 		defer rc.Close()
 	}
+
+	fmt.Printf("From message: %s\n", from)
 
 	peer, ok := s.peers[from]
 	if !ok {
@@ -303,14 +382,32 @@ func (s *FileServer) handleMessageDeleteFile(msg MessageDeleteFile) error {
 	return nil
 }
 
-func (s *FileServer) bootstrapNetwork() error {
-	for _, addr := range s.BootstrapNodes {
+func (s *FileServer) handleMessageAddFile(from string, msg MessageAddFile) error {
+	s.network = msg.PeerMap
+	if len(msg.Addr) == 0 {
+		return nil
+	}
+
+	peer, ok := s.peers[from]
+	if !ok {
+		return fmt.Errorf("peer not found")
+	}
+
+	fmt.Printf("Peer: %s\n", peer.LocalAddr().String())
+
+	peersMap := msg.PeerMap
+	fmt.Printf("PeerMapStr: %s\n", peersMap)
+	// Dial every peer in the map except the sender and the new peer
+	for _, addr := range peersMap {
+		if addr == msg.LocalAddr || addr == msg.Addr {
+			continue
+		}
 		if len(addr) == 0 {
 			continue
 		}
-		fmt.Printf("[%s] Attempting to dial: (%s)\n", s.Transport.Addr(), addr)
+		fmt.Printf("Address to be dialed %s\n", addr)
 		go func(addr string) {
-			if err := s.Transport.Dial(addr); err != nil {
+			if _, err := s.Transport.Dial(addr); err != nil {
 				log.Printf("Failed to dial %s: %s\n", addr, err)
 			}
 		}(addr)
@@ -344,4 +441,5 @@ func init() {
 	gob.Register(MessageStoreFile{})
 	gob.Register(MessageGetFile{})
 	gob.Register(MessageDeleteFile{})
+	gob.Register(MessageAddFile{})
 }

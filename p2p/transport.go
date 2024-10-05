@@ -9,7 +9,7 @@ type Transport interface {
 	ListenAndAccept() error
 	Consume() <-chan RPC
 	Close() error
-	Dial(string) error
+	Dial(string) (net.Addr, error)
 }
 
 // Peer is an interface that repersents a remote node in the network

@@ -67,15 +67,15 @@ func (t *TCPTransport) Close() error {
 	return t.listener.Close()
 }
 
-func (t *TCPTransport) Dial(addr string) error {
+func (t *TCPTransport) Dial(addr string) (net.Addr, error) {
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	go t.handleConn(conn, true)
 
-	return nil
+	return conn.RemoteAddr(), nil
 }
 
 func (t *TCPTransport) ListenAndAccept() error {
@@ -148,6 +148,7 @@ func (t *TCPTransport) handleConn(conn net.Conn, outbound bool) {
 			fmt.Printf("[%s] stream closed resuming read loop\n", conn.RemoteAddr())
 			continue
 		}
+		//fmt.Printf("RPC: %+v", rpc)
 
 		t.rpcch <- rpc
 	}
