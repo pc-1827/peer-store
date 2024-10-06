@@ -97,6 +97,7 @@ type MessageGetFile struct {
 // binary data, decrypts and writes it to the local disk, and returns a reader to
 // that received file.
 func (s *FileServer) Get(key string) (io.Reader, error) {
+	fmt.Printf("[%s] MSG.ID: (%s), MSG.Key: (%s)\n", s.Transport.Addr(), s.ID, key)
 	if s.store.Has(s.ID, key) {
 		fmt.Printf("[%s] serving file (%s) from the local disk\n", s.Transport.Addr(), key)
 		_, r, err := s.store.Read(s.ID, key)
@@ -108,7 +109,7 @@ func (s *FileServer) Get(key string) (io.Reader, error) {
 	msg := Message{
 		Payload: MessageGetFile{
 			ID:  s.ID,
-			Key: hashKey(key),
+			Key: key,
 		},
 	}
 
@@ -158,7 +159,7 @@ func (s *FileServer) Store(key string, r io.Reader) error {
 	msg := Message{
 		Payload: MessageStoreFile{
 			ID:   s.ID,
-			Key:  hashKey(key),
+			Key:  key,
 			Size: size + 16,
 		},
 	}
@@ -196,7 +197,7 @@ func (s *FileServer) Remove(key string) error {
 	msg := Message{
 		Payload: MessageDeleteFile{
 			ID:  s.ID,
-			Key: hashKey(key),
+			Key: key,
 		},
 	}
 
@@ -318,6 +319,7 @@ func (s *FileServer) handleMessage(from string, msg *Message) error {
 // Checks if the requested file is present or not. If present reads the file,
 // and writes the encrypted binary data to the peer message was sent from.
 func (s *FileServer) handleMessageGetFile(from string, msg MessageGetFile) error {
+	fmt.Printf("[%s] MSG.ID: (%s), MSG.Key: (%s)\n", s.Transport.Addr(), msg.ID, msg.Key)
 	if !s.store.Has(msg.ID, msg.Key) {
 		return fmt.Errorf("[%s] file (%s) is not present in the disk", s.Transport.Addr(), msg.Key)
 	}
