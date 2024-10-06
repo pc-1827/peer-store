@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"time"
 
 	"github.com/pc-1827/distributed-file-system/p2p"
@@ -20,6 +21,7 @@ func makeServer(listenAddress string) *FileServer {
 	tcpTransport := p2p.NewTCPTransport(tcpTransportOptions)
 
 	FileServerOptions := FileServerOptions{
+		ID:                "ed771b97431d745fad6be935371ad1dbbd64a1487d1abdfb89563f2e454a8e28",
 		EncKey:            newEncryptionKey(),
 		StorageRoot:       listenAddress + "_network",
 		PathTransformFunc: CASPathTransformFunc,
@@ -54,43 +56,49 @@ func main() {
 
 	server3.Add("127.0.0.1:3000")
 	time.Sleep(500 * time.Millisecond)
-	server3.Add("127.0.0.1:4000")
+	server1.Add("127.0.0.1:4000")
 	time.Sleep(500 * time.Millisecond)
 	server2.Add("127.0.0.1:6000")
 
-	for i := 0; i < 1; i++ {
-		key := fmt.Sprintf("random_picture_%d.jpeg", i)
+	for i := 0; i < 10; i++ {
+		key := fmt.Sprintf("random_picture_%d1.jpeg", i)
+		key2 := fmt.Sprintf("random_picture_%d.jpeg", i)
 		data_string := "random_bullshit"
 		for i := 0; i < 1; i++ {
 			data_string = data_string + fmt.Sprintf("abcdefghijklmnopqrstuvwxyz_%d_random_bullshit", i)
 		}
 		data := bytes.NewReader([]byte(data_string))
 
-		// filePath := "test_files/big-file"
-		// file, err := os.Open(filePath)
-		// if err != nil {
-		// 	log.Fatal(err)
-		// }
-		// defer file.Close()
+		filePath := "test_files/Happy Life FREDJI (No Copyright Music).mp3"
+		file, err := os.Open(filePath)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer file.Close()
 
 		// key := "test-6.png"
-		server3.Store(key, data)
+		server3.Store(key, file)
 		time.Sleep(5 * time.Millisecond)
-		server4.Store("random_key", bytes.NewReader([]byte("Another_random_bullshit")))
+		server4.Store(key2, data)
 		time.Sleep(5 * time.Millisecond)
 
-		if err := server1.store.Delete(server1.ID, key); err != nil {
+		if err := server2.store.Delete(server2.ID, key); err != nil {
 			log.Fatal(err)
 		}
 
-		r, err := server1.Get(key)
+		_, err = server2.Get(key)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		// if err := server3.Remove(key); err != nil {
-		// 	log.Fatal(err)
-		// }
+		r, err := server1.Get(key2)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if err := server3.Remove(key); err != nil {
+			log.Fatal(err)
+		}
 
 		b, err := io.ReadAll(r)
 		if err != nil {
