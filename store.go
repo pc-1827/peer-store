@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
 )
@@ -40,6 +42,14 @@ type PathKey struct {
 
 func (p PathKey) FullPathName() string {
 	return fmt.Sprintf("%s/%s", p.PathName, p.FileName)
+}
+
+func (p PathKey) FirstPathName() string {
+	paths := strings.Split(p.PathName, "/")
+	if len(paths) == 0 {
+		return ""
+	}
+	return paths[0]
 }
 
 type StoreOptions struct {
@@ -82,18 +92,30 @@ func (s *Store) Has(id string, key string) bool {
 }
 
 func (s *Store) Delete(id string, key string) error {
-	//pathKey := s.PathTransformFunc(key)
+	pathKey := s.PathTransformFunc(key)
 
-	// defer func() {
-	// 	log.Printf("deleted [%s] from disk\n", pathKey.FileName)
-	// }()
+	defer func() {
+		log.Printf("deleted [%s] from disk", pathKey.FileName)
+	}()
 
-	IDWithRoot := fmt.Sprintf("%s/%s", s.Root, id)
-	return os.RemoveAll(IDWithRoot)
+	firstPathNameWithRoot := fmt.Sprintf("%s/%s/%s", s.Root, id, pathKey.FirstPathName())
+
+	return os.RemoveAll(firstPathNameWithRoot)
 }
 
 func (s *Store) Read(id string, key string) (int64, io.Reader, error) {
 	return s.readStream(id, key)
+}
+
+func (s *Store) ReadDecrypt(fs *FileServer, id string, key string) (int64, io.Reader, error) {
+	_, r, err := s.readStream(id, key)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	fileBuffer := new(bytes.Buffer)
+	n, err := fs.decrypt(r, fileBuffer)
+	return int64(n), fileBuffer, err
 }
 
 func (s *Store) readStream(id string, key string) (int64, io.ReadCloser, error) {
@@ -117,13 +139,13 @@ func (s *Store) Write(id string, key string, r io.Reader) (int64, error) {
 	return s.writeStream(id, key, r)
 }
 
-func (s *Store) WriteDecrypt(encKey []byte, id string, key string, r io.Reader) (int64, error) {
+func (s *Store) WriteEncrypt(fs *FileServer, id string, key string, r io.Reader) (int64, error) {
 	f, err := s.openFileForWriting(id, key)
 	if err != nil {
 		return 0, err
 	}
 
-	n, err := copyDecrypt(encKey, r, f)
+	n, err := fs.encrypt(r, f)
 	return int64(n), err
 }
 

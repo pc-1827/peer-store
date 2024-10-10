@@ -9,28 +9,24 @@ import (
 	"io"
 )
 
-type AES struct {
-	Key []byte
-}
-
-func generateID() string {
+func GenerateID() string {
 	buf := make([]byte, 32)
 	io.ReadFull(rand.Reader, buf)
 	return hex.EncodeToString(buf)
 }
 
-func hashKey(key string) string {
+func HashKey(key string) string {
 	hash := md5.Sum([]byte(key))
 	return hex.EncodeToString(hash[:])
 }
 
-func (a *AES) newEncryptionKey() []byte {
+func NewEncryptionKey() []byte {
 	keyBuf := make([]byte, 32)
 	io.ReadFull(rand.Reader, keyBuf)
 	return keyBuf
 }
 
-func copyStream(stream cipher.Stream, blockSize int, src io.Reader, dst io.Writer) (int, error) {
+func copyStreamAES(stream cipher.Stream, blockSize int, src io.Reader, dst io.Writer) (int, error) {
 	var (
 		buf = make([]byte, 32*1024)
 		nw  = blockSize
@@ -55,7 +51,7 @@ func copyStream(stream cipher.Stream, blockSize int, src io.Reader, dst io.Write
 	return nw, nil
 }
 
-func copyDecryptAES(key []byte, src io.Reader, dst io.Writer) (int, error) {
+func DecryptAES(key []byte, src io.Reader, dst io.Writer) (int, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return 0, err
@@ -67,10 +63,10 @@ func copyDecryptAES(key []byte, src io.Reader, dst io.Writer) (int, error) {
 	}
 
 	stream := cipher.NewCTR(block, iv)
-	return copyStream(stream, block.BlockSize(), src, dst)
+	return copyStreamAES(stream, block.BlockSize(), src, dst)
 }
 
-func copyEncryptAES(key []byte, src io.Reader, dst io.Writer) (int, error) {
+func EncryptAES(key []byte, src io.Reader, dst io.Writer) (int, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		return 0, err
@@ -86,5 +82,5 @@ func copyEncryptAES(key []byte, src io.Reader, dst io.Writer) (int, error) {
 	}
 
 	stream := cipher.NewCTR(block, iv)
-	return copyStream(stream, block.BlockSize(), src, dst)
+	return copyStreamAES(stream, block.BlockSize(), src, dst)
 }

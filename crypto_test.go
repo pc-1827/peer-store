@@ -4,13 +4,15 @@ import (
 	"bytes"
 	"fmt"
 	"testing"
+
+	"github.com/pc-1827/distributed-file-system/crypto"
 )
 
 func TestCopyEncryptDecrypt(t *testing.T) {
 	payload := "Foo not bar"
 	src := bytes.NewReader([]byte(payload))
 	dst := new(bytes.Buffer)
-	key := newEncryptionKey()
+	key := crypto.NewEncryptionKey()
 	_, err := copyEncrypt(key, src, dst)
 	if err != nil {
 		t.Error(err)

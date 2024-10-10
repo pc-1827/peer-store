@@ -1,15 +1,20 @@
 package main
 
 import (
-	"bytes"
+	//"bytes"
 	"fmt"
 	"io"
 	"log"
-	//"os"
+	"os"
 	"time"
 
+	"github.com/pc-1827/distributed-file-system/crypto"
 	"github.com/pc-1827/distributed-file-system/p2p"
 )
+
+var serverID = crypto.GenerateID()
+var encryptionKey = crypto.NewEncryptionKey()
+var nonce = crypto.GenerateNonce()
 
 // func makeServer(listenAddress string, nodes ...string) *FileServer {
 func makeServer(listenAddress string) *FileServer {
@@ -21,12 +26,13 @@ func makeServer(listenAddress string) *FileServer {
 	tcpTransport := p2p.NewTCPTransport(tcpTransportOptions)
 
 	FileServerOptions := FileServerOptions{
-		ID:                "ed771b97431d745fad6be935371ad1dbbd64a1487d1abdfb89563f2e454a8e28",
-		EncKey:            newEncryptionKey(),
+		ID:                serverID,
+		EncType:           "AES",
+		EncKey:            encryptionKey,
+		Nonce:             nonce,
 		StorageRoot:       listenAddress + "_network",
 		PathTransformFunc: CASPathTransformFunc,
 		Transport:         tcpTransport,
-		//BootstrapNodes:    nodes,
 	}
 
 	server := NewFileServer(FileServerOptions)
@@ -60,36 +66,49 @@ func main() {
 	time.Sleep(500 * time.Millisecond)
 	server2.Add("127.0.0.1:6000")
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 1; i++ {
 		//key := fmt.Sprintf("random_picture_%d1.jpeg", i)
-		key2 := fmt.Sprintf("random_picture_%d.jpeg", i)
+		//key2 := fmt.Sprintf("random_picture_%d.jpeg", i)
 		data_string := "random_bullshit"
-		for i := 0; i < 1; i++ {
+		for j := 0; j < 1; j++ {
 			data_string = data_string + fmt.Sprintf("abcdefghijklmnopqrstuvwxyz_%d_random_bullshit", i)
 		}
-		data := bytes.NewReader([]byte(data_string))
+		//data := bytes.NewReader([]byte(data_string))
 
-		// filePath := "test_files/Happy Life FREDJI (No Copyright Music).mp3"
-		// file, err := os.Open(filePath)
-		// if err != nil {
-		// 	log.Fatal(err)
-		// }
-		// defer file.Close()
-
-		// key := "test-6.png"
-		//server3.Store(key, file)
-		time.Sleep(5 * time.Millisecond)
-		server2.Store(key2, data)
-		time.Sleep(5 * time.Millisecond)
-
-		if err := server2.store.Delete(server2.ID, key2); err != nil {
-			log.Fatal(err)
-		}
-
-		r, err := server2.Get(key2)
+		filePath := "test_files/Happy Life FREDJI (No Copyright Music).mp3"
+		file, err := os.Open(filePath)
 		if err != nil {
 			log.Fatal(err)
 		}
+		defer file.Close()
+
+		time.Sleep(100 * time.Millisecond)
+
+		key := "random"
+		server3.Store(key, file)
+		time.Sleep(500 * time.Millisecond)
+		//server2.Store(key2, data)
+		time.Sleep(500 * time.Millisecond)
+
+		if err := server2.store.Delete(server2.ID, key); err != nil {
+			log.Fatal(err)
+		}
+
+		r, err := server2.Get(key)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		if err := os.MkdirAll("test_output", os.ModePerm); err != nil {
+			log.Fatal(err)
+		}
+
+		f, err := os.Create("test_output/output.mp3")
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		io.Copy(f, r)
 
 		// r, err := server1.Get(key2)
 		// if err != nil {
@@ -106,7 +125,7 @@ func main() {
 		}
 
 		fmt.Printf("Length of string is: %d\n", len(b))
-		fmt.Println(string(b))
+		//fmt.Println(string(b))
 	}
 	select {}
 }

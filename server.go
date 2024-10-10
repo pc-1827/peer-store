@@ -11,12 +11,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pc-1827/distributed-file-system/crypto"
 	"github.com/pc-1827/distributed-file-system/p2p"
 )
 
 type FileServerOptions struct {
 	ID                string
+	EncType           string
 	EncKey            []byte
+	Nonce             []byte
 	StorageRoot       string
 	PathTransformFunc PathTransformFunc
 	Transport         p2p.Transport
@@ -41,7 +44,7 @@ func NewFileServer(opts FileServerOptions) *FileServer {
 	}
 
 	if len(opts.ID) == 0 {
-		opts.ID = generateID()
+		opts.ID = crypto.GenerateID()
 	}
 	return &FileServer{
 		FileServerOptions: opts,
@@ -100,10 +103,8 @@ func (s *FileServer) Get(key string) (io.Reader, error) {
 	fmt.Printf("[%s] MSG.ID: (%s), MSG.Key: (%s)\n", s.Transport.Addr(), s.ID, key)
 	if s.store.Has(s.ID, key) {
 		fmt.Printf("[%s] serving file (%s) from the local disk\n", s.Transport.Addr(), key)
-		_, r, err := s.store.Read(s.ID, key)
-		fileBuffer := new(bytes.Buffer)
-		_, err = copyDecrypt(s.EncKey, r, fileBuffer)
-		return fileBuffer, err
+		_, r, err := s.store.ReadDecrypt(s, s.ID, key)
+		return r, err
 	}
 
 	fmt.Printf("[%s] don't have the file (%s) locally, fetching from the network\n", s.Transport.Addr(), key)
@@ -134,10 +135,8 @@ func (s *FileServer) Get(key string) (io.Reader, error) {
 		peer.CloseStream()
 	}
 
-	_, r, err := s.store.Read(s.ID, key)
-	fileBuffer := new(bytes.Buffer)
-	_, err = copyDecrypt(s.EncKey, r, fileBuffer)
-	return fileBuffer, err
+	_, r, err := s.store.ReadDecrypt(s, s.ID, key)
+	return r, err
 }
 
 type MessageStoreFile struct {
@@ -156,22 +155,20 @@ func (s *FileServer) Store(key string, r io.Reader) error {
 		tee        = io.TeeReader(r, fileBuffer)
 	)
 
-	// Encrypt and store the data on the local disk
-	f, err := s.store.openFileForWriting(s.ID, key)
+	fmt.Print("Hello from the Store func\n")
+
+	size, err := s.store.WriteEncrypt(s, s.ID, key, tee)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to write encrypted data to local disk: %s", err)
 	}
 
-	size, err := copyEncrypt(s.EncKey, tee, f)
-	if err != nil {
-		return err
-	}
+	fmt.Print("Hello from the Store func 2\n")
 
 	msg := Message{
 		Payload: MessageStoreFile{
 			ID:   s.ID,
 			Key:  key,
-			Size: int64(size),
+			Size: size,
 		},
 	}
 
@@ -185,7 +182,7 @@ func (s *FileServer) Store(key string, r io.Reader) error {
 	}
 	mw := io.MultiWriter(peers...)
 	mw.Write([]byte{p2p.IncomingStream})
-	n, err := copyEncrypt(s.EncKey, fileBuffer, mw)
+	n, err := s.encrypt(fileBuffer, mw)
 	if err != nil {
 		return err
 	}
