@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pc-1827/distributed-file-system/crypto"
 	"github.com/pc-1827/distributed-file-system/p2p"
 )
 
@@ -23,7 +22,6 @@ type FileServerOptions struct {
 	StorageRoot       string
 	PathTransformFunc PathTransformFunc
 	Transport         p2p.Transport
-	//BootstrapNodes    []string
 }
 
 type FileServer struct {
@@ -44,7 +42,7 @@ func NewFileServer(opts FileServerOptions) *FileServer {
 	}
 
 	if len(opts.ID) == 0 {
-		opts.ID = crypto.GenerateID()
+		opts.ID = GenerateID()
 	}
 	return &FileServer{
 		FileServerOptions: opts,
@@ -99,12 +97,12 @@ type MessageGetFile struct {
 // If not, then prepares a message and broadcasts to all peers reads the incoming
 // binary data, decrypts and writes it to the local disk, and returns a reader to
 // that received file.
-func (s *FileServer) Get(key string) (io.Reader, error) {
+func (s *FileServer) Get(key string) (io.Reader, string, error) {
 	fmt.Printf("[%s] MSG.ID: (%s), MSG.Key: (%s)\n", s.Transport.Addr(), s.ID, key)
 	if s.store.Has(s.ID, key) {
 		fmt.Printf("[%s] serving file (%s) from the local disk\n", s.Transport.Addr(), key)
-		_, r, err := s.store.ReadDecrypt(s, s.ID, key)
-		return r, err
+		_, r, f, err := s.store.ReadDecrypt(s, s.ID, key)
+		return r, f, err
 	}
 
 	fmt.Printf("[%s] don't have the file (%s) locally, fetching from the network\n", s.Transport.Addr(), key)
@@ -117,7 +115,7 @@ func (s *FileServer) Get(key string) (io.Reader, error) {
 	}
 
 	if err := s.broadcast(&msg); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	time.Sleep(time.Millisecond * 500)
@@ -127,7 +125,7 @@ func (s *FileServer) Get(key string) (io.Reader, error) {
 		binary.Read(peer, binary.LittleEndian, &fileSize)
 		n, err := s.store.Write(s.ID, key, io.LimitReader(peer, fileSize))
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 
 		fmt.Printf("[%s] received %d bytes over the network from (%s):\n ", s.Transport.Addr(), n, peer.RemoteAddr())
@@ -135,8 +133,8 @@ func (s *FileServer) Get(key string) (io.Reader, error) {
 		peer.CloseStream()
 	}
 
-	_, r, err := s.store.ReadDecrypt(s, s.ID, key)
-	return r, err
+	_, r, f, err := s.store.ReadDecrypt(s, s.ID, key)
+	return r, f, err
 }
 
 type MessageStoreFile struct {

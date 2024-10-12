@@ -9,12 +9,6 @@ import (
 	"io"
 )
 
-func GenerateID() string {
-	buf := make([]byte, 32)
-	io.ReadFull(rand.Reader, buf)
-	return hex.EncodeToString(buf)
-}
-
 func HashKey(key string) string {
 	hash := md5.Sum([]byte(key))
 	return hex.EncodeToString(hash[:])

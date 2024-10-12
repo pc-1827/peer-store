@@ -1,11 +1,19 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 
 	"github.com/pc-1827/distributed-file-system/crypto"
 )
+
+func GenerateID() string {
+	buf := make([]byte, 32)
+	io.ReadFull(rand.Reader, buf)
+	return hex.EncodeToString(buf)
+}
 
 func (s *FileServer) encrypt(src io.Reader, dst io.Writer) (int, error) {
 	if s.EncType == "AES" {

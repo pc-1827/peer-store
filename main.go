@@ -1,7 +1,7 @@
 package main
 
 import (
-	//"bytes"
+	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -12,7 +12,7 @@ import (
 	"github.com/pc-1827/distributed-file-system/p2p"
 )
 
-var serverID = crypto.GenerateID()
+var serverID = GenerateID()
 var encryptionKey = crypto.NewEncryptionKey()
 var nonce = crypto.GenerateNonce()
 
@@ -68,12 +68,12 @@ func main() {
 
 	for i := 0; i < 1; i++ {
 		//key := fmt.Sprintf("random_picture_%d1.jpeg", i)
-		//key2 := fmt.Sprintf("random_picture_%d.jpeg", i)
+		key2 := fmt.Sprintf("random_picture_%d.jpeg", i)
 		data_string := "random_bullshit"
 		for j := 0; j < 1; j++ {
 			data_string = data_string + fmt.Sprintf("abcdefghijklmnopqrstuvwxyz_%d_random_bullshit", i)
 		}
-		//data := bytes.NewReader([]byte(data_string))
+		data := bytes.NewReader([]byte(data_string))
 
 		filePath := "test_files/Happy Life FREDJI (No Copyright Music).mp3"
 		file, err := os.Open(filePath)
@@ -84,17 +84,17 @@ func main() {
 
 		time.Sleep(100 * time.Millisecond)
 
-		key := "random"
+		key := "test.mp3"
 		server3.Store(key, file)
 		time.Sleep(500 * time.Millisecond)
-		//server2.Store(key2, data)
+		server2.Store(key2, data)
 		time.Sleep(500 * time.Millisecond)
 
-		if err := server2.store.Delete(server2.ID, key); err != nil {
-			log.Fatal(err)
-		}
+		// if err := server2.store.Delete(server2.ID, key); err != nil {
+		// 	log.Fatal(err)
+		// }
 
-		r, err := server2.Get(key)
+		r, fileName, err := server2.Get(key)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -103,7 +103,7 @@ func main() {
 			log.Fatal(err)
 		}
 
-		f, err := os.Create("test_output/output.mp3")
+		f, err := os.Create(fmt.Sprintf("test_output/%s", fileName))
 		if err != nil {
 			log.Fatal(err)
 		}
