@@ -11,14 +11,21 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pc-1827/distributed-file-system/crypto"
 	"github.com/pc-1827/distributed-file-system/p2p"
 )
 
+type Network struct {
+	EncType string
+	EncKey  []byte
+	Nonce   []byte
+	Nodes   []string
+}
+
+var network Network
+
 type FileServerOptions struct {
 	ID                string
-	EncType           string
-	EncKey            []byte
-	Nonce             []byte
 	StorageRoot       string
 	PathTransformFunc PathTransformFunc
 	Transport         p2p.Transport
@@ -29,7 +36,6 @@ type FileServer struct {
 
 	peerLock sync.Mutex
 	peers    map[string]p2p.Peer
-	network  []string
 
 	store  *Store
 	quitch chan struct{}
@@ -49,7 +55,6 @@ func NewFileServer(opts FileServerOptions) *FileServer {
 		store:             NewStore(StoreOptions),
 		quitch:            make(chan struct{}),
 		peers:             make(map[string]p2p.Peer),
-		network:           []string{},
 	}
 }
 
@@ -101,7 +106,7 @@ func (s *FileServer) Get(key string) (io.Reader, string, error) {
 	fmt.Printf("[%s] MSG.ID: (%s), MSG.Key: (%s)\n", s.Transport.Addr(), s.ID, key)
 	if s.store.Has(s.ID, key) {
 		fmt.Printf("[%s] serving file (%s) from the local disk\n", s.Transport.Addr(), key)
-		_, r, f, err := s.store.ReadDecrypt(s, s.ID, key)
+		_, r, f, err := s.store.ReadDecrypt(s.ID, key)
 		return r, f, err
 	}
 
@@ -133,7 +138,7 @@ func (s *FileServer) Get(key string) (io.Reader, string, error) {
 		peer.CloseStream()
 	}
 
-	_, r, f, err := s.store.ReadDecrypt(s, s.ID, key)
+	_, r, f, err := s.store.ReadDecrypt(s.ID, key)
 	return r, f, err
 }
 
@@ -153,14 +158,10 @@ func (s *FileServer) Store(key string, r io.Reader) error {
 		tee        = io.TeeReader(r, fileBuffer)
 	)
 
-	fmt.Print("Hello from the Store func\n")
-
-	size, err := s.store.WriteEncrypt(s, s.ID, key, tee)
+	size, err := s.store.WriteEncrypt(s.ID, key, tee)
 	if err != nil {
 		return fmt.Errorf("failed to write encrypted data to local disk: %s", err)
 	}
-
-	fmt.Print("Hello from the Store func 2\n")
 
 	msg := Message{
 		Payload: MessageStoreFile{
@@ -180,7 +181,7 @@ func (s *FileServer) Store(key string, r io.Reader) error {
 	}
 	mw := io.MultiWriter(peers...)
 	mw.Write([]byte{p2p.IncomingStream})
-	n, err := s.encrypt(fileBuffer, mw)
+	n, err := encrypt(fileBuffer, mw)
 	if err != nil {
 		return err
 	}
@@ -223,22 +224,27 @@ func (s *FileServer) Remove(key string) error {
 type MessageAddFile struct {
 	Addr      string
 	LocalAddr string
-	PeerMap   []string
+	Network   Network
 }
 
 func (s *FileServer) Add(addr string) error {
 	var remoteAddr net.Addr
 	var err error
 
-	if len(s.network) == 0 {
-		s.network = append(s.network, s.Transport.Addr())
+	if len(network.Nodes) == 0 {
+		network = Network{
+			EncType: "CC20",
+			EncKey:  crypto.NewEncryptionKey(),
+			Nonce:   crypto.GenerateNonce(),
+			Nodes:   append(network.Nodes, s.Transport.Addr()),
+		}
 	}
-	s.network = append(s.network, addr)
+	network.Nodes = append(network.Nodes, addr)
 	msg := Message{
 		Payload: MessageAddFile{
 			Addr:      "",
 			LocalAddr: s.Transport.Addr(),
-			PeerMap:   s.network,
+			Network:   network,
 		},
 	}
 
@@ -270,7 +276,7 @@ func (s *FileServer) Add(addr string) error {
 		Payload: MessageAddFile{
 			Addr:      remoteAddr.String(),
 			LocalAddr: s.Transport.Addr(),
-			PeerMap:   s.network,
+			Network:   network,
 		},
 	}
 

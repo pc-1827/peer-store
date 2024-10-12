@@ -8,13 +8,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/pc-1827/distributed-file-system/crypto"
 	"github.com/pc-1827/distributed-file-system/p2p"
 )
 
 var serverID = GenerateID()
-var encryptionKey = crypto.NewEncryptionKey()
-var nonce = crypto.GenerateNonce()
 
 // func makeServer(listenAddress string, nodes ...string) *FileServer {
 func makeServer(listenAddress string) *FileServer {
@@ -27,9 +24,6 @@ func makeServer(listenAddress string) *FileServer {
 
 	FileServerOptions := FileServerOptions{
 		ID:                serverID,
-		EncType:           "AES",
-		EncKey:            encryptionKey,
-		Nonce:             nonce,
 		StorageRoot:       listenAddress + "_network",
 		PathTransformFunc: CASPathTransformFunc,
 		Transport:         tcpTransport,
@@ -90,9 +84,9 @@ func main() {
 		server2.Store(key2, data)
 		time.Sleep(500 * time.Millisecond)
 
-		// if err := server2.store.Delete(server2.ID, key); err != nil {
-		// 	log.Fatal(err)
-		// }
+		if err := server2.store.Delete(server2.ID, key); err != nil {
+			log.Fatal(err)
+		}
 
 		r, fileName, err := server2.Get(key)
 		if err != nil {

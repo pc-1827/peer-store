@@ -39,7 +39,6 @@ func (s *FileServer) handleMessageGetFile(from string, msg MessageGetFile) error
 	}
 
 	if rc, ok := r.(io.ReadCloser); ok {
-		fmt.Println("closing the read closer")
 		defer rc.Close()
 	}
 
@@ -93,10 +92,12 @@ func (s *FileServer) handleMessageDeleteFile(msg MessageDeleteFile) error {
 }
 
 func (s *FileServer) handleMessageAddFile(from string, msg MessageAddFile) error {
-	s.network = msg.PeerMap
 	if len(msg.Addr) == 0 {
+		network.Nodes = msg.Network.Nodes
 		return nil
 	}
+
+	network = msg.Network
 
 	peer, ok := s.peers[from]
 	if !ok {
@@ -105,7 +106,7 @@ func (s *FileServer) handleMessageAddFile(from string, msg MessageAddFile) error
 
 	fmt.Printf("Peer: %s\n", peer.LocalAddr().String())
 
-	peersMap := msg.PeerMap
+	peersMap := msg.Network.Nodes
 	fmt.Printf("PeerMapStr: %s\n", peersMap)
 	// Dial every peer in the map except the sender and the new peer
 	for _, addr := range peersMap {
