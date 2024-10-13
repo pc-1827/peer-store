@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,7 +26,6 @@ type Network struct {
 var network Network
 
 type FileServerOptions struct {
-	ID                string
 	StorageRoot       string
 	PathTransformFunc PathTransformFunc
 	Transport         p2p.Transport
@@ -45,10 +45,6 @@ func NewFileServer(opts FileServerOptions) *FileServer {
 	StoreOptions := StoreOptions{
 		Root:              opts.StorageRoot,
 		PathTransformFunc: opts.PathTransformFunc,
-	}
-
-	if len(opts.ID) == 0 {
-		opts.ID = GenerateID()
 	}
 	return &FileServer{
 		FileServerOptions: opts,
@@ -93,8 +89,7 @@ func (s *FileServer) sendMessage(peer p2p.Peer, msg *Message) error {
 }
 
 type MessageGetFile struct {
-	ID  string
-	Key string
+	CID string
 }
 
 // Takes a key(file Name) and returns a Reader(data), checks if file is present
@@ -102,20 +97,19 @@ type MessageGetFile struct {
 // If not, then prepares a message and broadcasts to all peers reads the incoming
 // binary data, decrypts and writes it to the local disk, and returns a reader to
 // that received file.
-func (s *FileServer) Get(key string) (io.Reader, string, error) {
-	fmt.Printf("[%s] MSG.ID: (%s), MSG.Key: (%s)\n", s.Transport.Addr(), s.ID, key)
-	if s.store.Has(s.ID, key) {
-		fmt.Printf("[%s] serving file (%s) from the local disk\n", s.Transport.Addr(), key)
-		_, r, f, err := s.store.ReadDecrypt(s.ID, key)
+func (s *FileServer) Get(cid string) (io.Reader, string, error) {
+	fmt.Printf("[%s] MSG.CID: (%s)\n", s.Transport.Addr(), cid)
+	if s.store.Has(cid) {
+		fmt.Printf("[%s] serving file (%s) from the local disk\n", s.Transport.Addr(), cid)
+		_, r, f, err := s.store.ReadDecrypt(cid)
 		return r, f, err
 	}
 
-	fmt.Printf("[%s] don't have the file (%s) locally, fetching from the network\n", s.Transport.Addr(), key)
+	fmt.Printf("[%s] don't have the file (%s) locally, fetching from the network\n", s.Transport.Addr(), cid)
 
 	msg := Message{
 		Payload: MessageGetFile{
-			ID:  s.ID,
-			Key: key,
+			CID: cid,
 		},
 	}
 
@@ -127,23 +121,41 @@ func (s *FileServer) Get(key string) (io.Reader, string, error) {
 
 	for _, peer := range s.peers {
 		var fileSize int64
-		binary.Read(peer, binary.LittleEndian, &fileSize)
-		n, err := s.store.Write(s.ID, key, io.LimitReader(peer, fileSize))
+		if err := binary.Read(peer, binary.LittleEndian, &fileSize); err != nil {
+			return nil, "", fmt.Errorf("failed to read file size: %s", err)
+		}
+		fmt.Printf("File Size: %d\n", fileSize)
+		n, err := s.store.writeStream(cid, io.LimitReader(peer, fileSize))
 		if err != nil {
 			return nil, "", err
 		}
 
-		fmt.Printf("[%s] received %d bytes over the network from (%s):\n ", s.Transport.Addr(), n, peer.RemoteAddr())
+		fmt.Printf("[%s] received %d bytes over the network from (%s):\n", s.Transport.Addr(), n, peer.RemoteAddr())
+
+		var keySize int64
+		if err := binary.Read(peer, binary.LittleEndian, &keySize); err != nil {
+			return nil, "", fmt.Errorf("failed to read key size: %s", err)
+		}
+		fmt.Printf("Key size: %d\n", keySize/256)
+		data, err := io.ReadAll(io.LimitReader(peer, int64(keySize/256)+1))
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to read key data: %s", err)
+		}
+		fmt.Printf("Key data: %s\n", string(data))
+		fileName := strings.ReplaceAll(string(data), "\x00", "")
+		s.store.writeMetadata(cid, fileName)
+
+		fmt.Printf("[%s] received %d bytes of key over the network from (%s):\n", s.Transport.Addr(), len(data)-1, peer.RemoteAddr())
 
 		peer.CloseStream()
 	}
 
-	_, r, f, err := s.store.ReadDecrypt(s.ID, key)
+	_, r, f, err := s.store.ReadDecrypt(cid)
 	return r, f, err
 }
 
 type MessageStoreFile struct {
-	ID   string
+	CID  string
 	Key  string
 	Size int64
 }
@@ -152,20 +164,22 @@ type MessageStoreFile struct {
 // prepares and broadcasts a message to all peers to prepare them for receiving
 // data, then writes encrypted data to the stream to all peers.
 
-func (s *FileServer) Store(key string, r io.Reader) error {
+func (s *FileServer) Store(key string, r io.Reader) (string, error) {
 	var (
+		buffer     = new(bytes.Buffer)
 		fileBuffer = new(bytes.Buffer)
-		tee        = io.TeeReader(r, fileBuffer)
+		tee        = io.TeeReader(r, buffer)
+		reader     = io.TeeReader(buffer, fileBuffer)
 	)
-
-	size, err := s.store.WriteEncrypt(s.ID, key, tee)
+	cid := GenerateCID(tee)
+	size, err := s.store.WriteEncrypt(cid, key, reader)
 	if err != nil {
-		return fmt.Errorf("failed to write encrypted data to local disk: %s", err)
+		return "", fmt.Errorf("failed to write encrypted data to local disk: %s", err)
 	}
 
 	msg := Message{
 		Payload: MessageStoreFile{
-			ID:   s.ID,
+			CID:  cid,
 			Key:  key,
 			Size: size,
 		},
@@ -183,26 +197,24 @@ func (s *FileServer) Store(key string, r io.Reader) error {
 	mw.Write([]byte{p2p.IncomingStream})
 	n, err := encrypt(fileBuffer, mw)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	fmt.Printf("[%s] received and written (%d) bytes to the disk\n", s.Transport.Addr(), n)
-	return nil
+	return cid, nil
 }
 
 type MessageDeleteFile struct {
-	ID  string
-	Key string
+	CID string
 }
 
 // Takes a key(file name) to be deleted in the peer network, prepares
 // and broadcasts a message to all peers. Deletes the key on local disk
 // using the store.Delete func.
-func (s *FileServer) Remove(key string) error {
+func (s *FileServer) Remove(cid string) error {
 	msg := Message{
 		Payload: MessageDeleteFile{
-			ID:  s.ID,
-			Key: key,
+			CID: cid,
 		},
 	}
 
@@ -210,11 +222,11 @@ func (s *FileServer) Remove(key string) error {
 		return err
 	}
 
-	if err := s.store.Delete(s.ID, key); err != nil {
-		return fmt.Errorf("[%s] Failed to delete file (%s) from the disk: ", s.Transport.Addr(), key)
+	if err := s.store.Delete(cid); err != nil {
+		return fmt.Errorf("[%s] Failed to delete file (%s) from the disk: ", s.Transport.Addr(), cid)
 	}
 
-	fmt.Printf("[%s] Deleting (%s) from the disk\n", s.Transport.Addr(), s.ID)
+	fmt.Printf("[%s] Deleting (%s) from the disk\n", s.Transport.Addr(), cid)
 
 	time.Sleep(time.Second * 1)
 

@@ -92,31 +92,31 @@ func (s *Store) Clear() error {
 	return os.RemoveAll(s.Root)
 }
 
-func (s *Store) Has(id string, key string) bool {
-	pathKey := s.PathTransformFunc(key)
+func (s *Store) Has(id string) bool {
+	pathKey := s.PathTransformFunc(id)
 	FullPathNameWithRoot := fmt.Sprintf("%s/%s/%s", s.Root, id, pathKey.FullPathName())
 	_, err := os.Stat(FullPathNameWithRoot)
 	return !errors.Is(err, os.ErrNotExist)
 }
 
-func (s *Store) Delete(id string, key string) error {
-	pathKey := s.PathTransformFunc(key)
+func (s *Store) Delete(id string) error {
+	//pathKey := s.PathTransformFunc(id)
 
 	defer func() {
-		log.Printf("deleted [%s] from disk", pathKey.FileName)
+		log.Printf("deleted [%s] from disk", id)
 	}()
 
-	firstPathNameWithRoot := fmt.Sprintf("%s/%s/%s", s.Root, id, pathKey.FirstPathName())
+	firstPathNameWithRoot := fmt.Sprintf("%s/%s", s.Root, id)
 
 	return os.RemoveAll(firstPathNameWithRoot)
 }
 
-func (s *Store) Read(id string, key string) (int64, io.Reader, error) {
-	return s.readStream(id, key)
+func (s *Store) Read(id string) (int64, io.Reader, error) {
+	return s.readStream(id)
 }
 
-func (s *Store) ReadDecrypt(id string, key string) (int64, io.Reader, string, error) {
-	_, r, err := s.readStream(id, key)
+func (s *Store) ReadDecrypt(id string) (int64, io.Reader, string, error) {
+	_, r, err := s.readStream(id)
 	if err != nil {
 		return 0, nil, "", err
 	}
@@ -127,7 +127,7 @@ func (s *Store) ReadDecrypt(id string, key string) (int64, io.Reader, string, er
 		return 0, nil, "", err
 	}
 
-	metadata, err := s.readMetadata(id, key)
+	metadata, err := s.readMetadata(id)
 	if err != nil {
 		return 0, nil, "", err
 	}
@@ -135,8 +135,8 @@ func (s *Store) ReadDecrypt(id string, key string) (int64, io.Reader, string, er
 	return int64(n), fileBuffer, metadata.FileName, nil
 }
 
-func (s *Store) readMetadata(id string, key string) (Metadata, error) {
-	pathKey := s.PathTransformFunc(key)
+func (s *Store) readMetadata(id string) (Metadata, error) {
+	pathKey := s.PathTransformFunc(id)
 	FullPathNameWithRoot := fmt.Sprintf("%s/%s/%s/metadata", s.Root, id, pathKey.PathName)
 
 	metadataFile, err := os.Open(FullPathNameWithRoot)
@@ -160,8 +160,8 @@ func (s *Store) readMetadata(id string, key string) (Metadata, error) {
 	return metadata, nil
 }
 
-func (s *Store) readStream(id string, key string) (int64, io.ReadCloser, error) {
-	pathKey := s.PathTransformFunc(key)
+func (s *Store) readStream(id string) (int64, io.ReadCloser, error) {
+	pathKey := s.PathTransformFunc(id)
 	FullPathNameWithRoot := fmt.Sprintf("%s/%s/%s", s.Root, id, pathKey.FullPathName())
 
 	file, err := os.Open(FullPathNameWithRoot)
@@ -178,7 +178,7 @@ func (s *Store) readStream(id string, key string) (int64, io.ReadCloser, error) 
 }
 
 func (s *Store) Write(id string, key string, r io.Reader) (int64, error) {
-	n, err := s.writeStream(id, key, r)
+	n, err := s.writeStream(id, r)
 	if err != nil {
 		return 0, err
 	}
@@ -191,7 +191,7 @@ func (s *Store) Write(id string, key string, r io.Reader) (int64, error) {
 }
 
 func (s *Store) WriteEncrypt(id string, key string, r io.Reader) (int64, error) {
-	f, err := s.openFileForWriting(id, key)
+	f, err := s.openFileForWriting(id)
 	if err != nil {
 		return 0, err
 	}
@@ -210,7 +210,7 @@ func (s *Store) WriteEncrypt(id string, key string, r io.Reader) (int64, error) 
 }
 
 func (s *Store) writeMetadata(id string, key string) error {
-	pathKey := s.PathTransformFunc(key)
+	pathKey := s.PathTransformFunc(id)
 	FullPathNameWithRoot := fmt.Sprintf("%s/%s/%s/metadata", s.Root, id, pathKey.PathName)
 
 	metadataFile, err := os.Create(FullPathNameWithRoot)
@@ -239,8 +239,8 @@ func (s *Store) writeMetadata(id string, key string) error {
 	return nil
 }
 
-func (s *Store) openFileForWriting(id string, key string) (*os.File, error) {
-	pathKey := s.PathTransformFunc(key)
+func (s *Store) openFileForWriting(id string) (*os.File, error) {
+	pathKey := s.PathTransformFunc(id)
 	PathNameWithRoot := fmt.Sprintf("%s/%s/%s", s.Root, id, pathKey.PathName)
 
 	if err := os.MkdirAll(PathNameWithRoot, os.ModePerm); err != nil {
@@ -252,8 +252,8 @@ func (s *Store) openFileForWriting(id string, key string) (*os.File, error) {
 	return os.Create(FullPathNameWithRoot)
 }
 
-func (s *Store) writeStream(id string, key string, r io.Reader) (int64, error) {
-	f, err := s.openFileForWriting(id, key)
+func (s *Store) writeStream(id string, r io.Reader) (int64, error) {
+	f, err := s.openFileForWriting(id)
 	if err != nil {
 		return 0, err
 	}

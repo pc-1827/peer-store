@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
+	"time"
 
 	"github.com/pc-1827/distributed-file-system/p2p"
 )
@@ -27,16 +29,23 @@ func (s *FileServer) handleMessage(from string, msg *Message) error {
 // Checks if the requested file is present or not. If present reads the file,
 // and writes the encrypted binary data to the peer message was sent from.
 func (s *FileServer) handleMessageGetFile(from string, msg MessageGetFile) error {
-	fmt.Printf("[%s] MSG.ID: (%s), MSG.Key: (%s)\n", s.Transport.Addr(), msg.ID, msg.Key)
-	if !s.store.Has(msg.ID, msg.Key) {
-		return fmt.Errorf("[%s] file (%s) is not present in the disk", s.Transport.Addr(), msg.Key)
+	fmt.Printf("[%s] MSG.CID: (%s)\n", s.Transport.Addr(), msg.CID)
+	if !s.store.Has(msg.CID) {
+		return fmt.Errorf("[%s] file (%s) is not present in the disk", s.Transport.Addr(), msg.CID)
 	}
 
-	fmt.Printf("[%s] got file (%s) from the disk, serving over the network\n", s.Transport.Addr(), msg.Key)
-	fileSize, r, err := s.store.Read(msg.ID, msg.Key)
+	fmt.Printf("[%s] got file (%s) from the disk, serving over the network\n", s.Transport.Addr(), msg.CID)
+	fileSize, r, err := s.store.Read(msg.CID)
 	if err != nil {
 		return err
 	}
+
+	metadata, err := s.store.readMetadata(msg.CID)
+	if err != nil {
+		return fmt.Errorf("error reading metadata: %s", err)
+	}
+
+	keySize := int64(len(metadata.FileName))
 
 	if rc, ok := r.(io.ReadCloser); ok {
 		defer rc.Close()
@@ -58,6 +67,17 @@ func (s *FileServer) handleMessageGetFile(from string, msg MessageGetFile) error
 	}
 
 	fmt.Printf("[%s] written %d bytes over the network to %s\n", s.Transport.Addr(), n, from)
+	time.Sleep(100 * time.Millisecond)
+	peer.Send([]byte{p2p.IncomingStream})
+	binary.Write(peer, binary.LittleEndian, keySize)
+
+	n, err = io.Copy(peer, bytes.NewReader([]byte(metadata.FileName)))
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("[%s] written %d bytes of key over the network to %s\n", s.Transport.Addr(), n, from)
+
 	return nil
 }
 
@@ -69,7 +89,7 @@ func (s *FileServer) handleMessageStoreFile(from string, msg MessageStoreFile) e
 		return fmt.Errorf("peer (%s) could not be found in the peer list", from)
 	}
 
-	n, err := s.store.Write(msg.ID, msg.Key, io.LimitReader(peer, msg.Size))
+	n, err := s.store.Write(msg.CID, msg.Key, io.LimitReader(peer, msg.Size))
 	if err != nil {
 		return err
 	}
@@ -84,8 +104,8 @@ func (s *FileServer) handleMessageStoreFile(from string, msg MessageStoreFile) e
 // Finds the file to delete from the received message and then calls the
 // store.Delete function to remove from the local disk
 func (s *FileServer) handleMessageDeleteFile(msg MessageDeleteFile) error {
-	if err := s.store.Delete(msg.ID, msg.Key); err != nil {
-		return fmt.Errorf("[%s] Failed to delete file (%s) from the disk: ", s.Transport.Addr(), msg.Key)
+	if err := s.store.Delete(msg.CID); err != nil {
+		return fmt.Errorf("[%s] Failed to delete file (%s) from the disk: ", s.Transport.Addr(), msg.CID)
 	}
 	fmt.Printf("[%s] Deleting from the disk\n", s.Transport.Addr())
 	return nil

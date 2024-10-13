@@ -11,8 +11,6 @@ import (
 	"github.com/pc-1827/distributed-file-system/p2p"
 )
 
-var serverID = GenerateID()
-
 // func makeServer(listenAddress string, nodes ...string) *FileServer {
 func makeServer(listenAddress string) *FileServer {
 	tcpTransportOptions := p2p.TCPTransportOptions{
@@ -23,7 +21,6 @@ func makeServer(listenAddress string) *FileServer {
 	tcpTransport := p2p.NewTCPTransport(tcpTransportOptions)
 
 	FileServerOptions := FileServerOptions{
-		ID:                serverID,
 		StorageRoot:       listenAddress + "_network",
 		PathTransformFunc: CASPathTransformFunc,
 		Transport:         tcpTransport,
@@ -62,7 +59,7 @@ func main() {
 
 	for i := 0; i < 1; i++ {
 		//key := fmt.Sprintf("random_picture_%d1.jpeg", i)
-		key2 := fmt.Sprintf("random_picture_%d.jpeg", i)
+		key2 := fmt.Sprintf("random_picture_%d.txt", i)
 		data_string := "random_bullshit"
 		for j := 0; j < 1; j++ {
 			data_string = data_string + fmt.Sprintf("abcdefghijklmnopqrstuvwxyz_%d_random_bullshit", i)
@@ -78,20 +75,25 @@ func main() {
 
 		time.Sleep(100 * time.Millisecond)
 
-		key := "test.mp3"
-		server3.Store(key, file)
+		key := "test123.mp3"
+		cid, err := server3.Store(key, file)
 		time.Sleep(500 * time.Millisecond)
 		server2.Store(key2, data)
-		time.Sleep(500 * time.Millisecond)
-
-		if err := server2.store.Delete(server2.ID, key); err != nil {
-			log.Fatal(err)
-		}
-
-		r, fileName, err := server2.Get(key)
 		if err != nil {
 			log.Fatal(err)
 		}
+		time.Sleep(500 * time.Millisecond)
+
+		if err := server3.store.Delete(cid); err != nil {
+			log.Fatal(err)
+		}
+
+		r, fileName, err := server3.Get(cid)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		fmt.Printf("FileName: %q\n", fileName)
 
 		if err := os.MkdirAll("test_output", os.ModePerm); err != nil {
 			log.Fatal(err)
@@ -109,9 +111,9 @@ func main() {
 		// 	log.Fatal(err)
 		// }
 
-		// if err := server3.Remove(key); err != nil {
-		// 	log.Fatal(err)
-		// }
+		if err := server3.Remove(cid); err != nil {
+			log.Fatal(err)
+		}
 
 		b, err := io.ReadAll(r)
 		if err != nil {

@@ -1,18 +1,23 @@
 package main
 
 import (
-	"crypto/rand"
+	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log"
 
 	"github.com/pc-1827/distributed-file-system/crypto"
 )
 
-func GenerateID() string {
-	buf := make([]byte, 32)
-	io.ReadFull(rand.Reader, buf)
-	return hex.EncodeToString(buf)
+func GenerateCID(r io.Reader) string {
+	// Generate CID by hashing the data
+	hash := sha1.New()
+	if _, err := io.Copy(hash, r); err != nil {
+		log.Fatal(err)
+		return ""
+	}
+	return hex.EncodeToString(hash.Sum(nil))
 }
 
 func encrypt(src io.Reader, dst io.Writer) (int, error) {
