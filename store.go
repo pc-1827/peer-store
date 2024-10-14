@@ -43,9 +43,11 @@ type PathKey struct {
 }
 
 type Metadata struct {
-	ServerID string
-	FileID   string
-	FileName string
+	CID        string
+	FileID     string
+	FileName   string
+	Part       int
+	TotalParts int
 }
 
 func (p PathKey) FullPathName() string {
@@ -177,20 +179,20 @@ func (s *Store) readStream(id string) (int64, io.ReadCloser, error) {
 	return fi.Size(), file, nil
 }
 
-func (s *Store) Write(id string, key string, r io.Reader) (int64, error) {
+func (s *Store) Write(id string, key string, r io.Reader, part int, totalParts int) (int64, error) {
 	n, err := s.writeStream(id, r)
 	if err != nil {
 		return 0, err
 	}
 
-	if err := s.writeMetadata(id, key); err != nil {
+	if err := s.writeMetadata(id, key, part, totalParts); err != nil {
 		return 0, err
 	}
 
 	return n, nil
 }
 
-func (s *Store) WriteEncrypt(id string, key string, r io.Reader) (int64, error) {
+func (s *Store) WriteEncrypt(id string, key string, r io.Reader, part int, totalParts int) (int64, error) {
 	f, err := s.openFileForWriting(id)
 	if err != nil {
 		return 0, err
@@ -202,14 +204,14 @@ func (s *Store) WriteEncrypt(id string, key string, r io.Reader) (int64, error) 
 		return 0, err
 	}
 
-	if err := s.writeMetadata(id, key); err != nil {
+	if err := s.writeMetadata(id, key, part, totalParts); err != nil {
 		return 0, err
 	}
 
 	return int64(n), nil
 }
 
-func (s *Store) writeMetadata(id string, key string) error {
+func (s *Store) writeMetadata(id string, key string, part int, totalParts int) error {
 	pathKey := s.PathTransformFunc(id)
 	FullPathNameWithRoot := fmt.Sprintf("%s/%s/%s/metadata", s.Root, id, pathKey.PathName)
 
@@ -222,9 +224,11 @@ func (s *Store) writeMetadata(id string, key string) error {
 	time.Sleep(100 * time.Millisecond)
 
 	metadata := Metadata{
-		ServerID: id,
-		FileID:   pathKey.FileName,
-		FileName: key,
+		CID:        id,
+		FileID:     pathKey.FileName,
+		FileName:   key,
+		Part:       part,
+		TotalParts: totalParts,
 	}
 
 	metadataBuffer := new(bytes.Buffer)

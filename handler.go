@@ -89,12 +89,14 @@ func (s *FileServer) handleMessageStoreFile(from string, msg MessageStoreFile) e
 		return fmt.Errorf("peer (%s) could not be found in the peer list", from)
 	}
 
-	n, err := s.store.Write(msg.CID, msg.Key, io.LimitReader(peer, msg.Size))
+	fmt.Println(msg)
+
+	n, err := s.store.Write(msg.CID, msg.Key, io.LimitReader(peer, msg.Size), msg.Part, msg.TotalParts)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("[%s] written %d bytes to the disk\n", s.Transport.Addr(), n)
+	fmt.Printf("[%s] written part (%d) %d bytes to the disk\n", s.Transport.Addr(), msg.Part, n)
 
 	peer.CloseStream()
 

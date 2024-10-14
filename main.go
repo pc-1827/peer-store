@@ -1,9 +1,9 @@
 package main
 
 import (
-	"bytes"
+	//"bytes"
 	"fmt"
-	"io"
+	//"io"
 	"log"
 	"os"
 	"time"
@@ -59,12 +59,12 @@ func main() {
 
 	for i := 0; i < 1; i++ {
 		//key := fmt.Sprintf("random_picture_%d1.jpeg", i)
-		key2 := fmt.Sprintf("random_picture_%d.txt", i)
+		//key2 := fmt.Sprintf("random_picture_%d.txt", i)
 		data_string := "random_bullshit"
 		for j := 0; j < 1; j++ {
 			data_string = data_string + fmt.Sprintf("abcdefghijklmnopqrstuvwxyz_%d_random_bullshit", i)
 		}
-		data := bytes.NewReader([]byte(data_string))
+		//data := bytes.NewReader([]byte(data_string))
 
 		filePath := "test_files/Happy Life FREDJI (No Copyright Music).mp3"
 		file, err := os.Open(filePath)
@@ -76,51 +76,51 @@ func main() {
 		time.Sleep(100 * time.Millisecond)
 
 		key := "test123.mp3"
-		cid, err := server3.Store(key, file)
+		server3.Store(key, file)
 		time.Sleep(500 * time.Millisecond)
-		server2.Store(key2, data)
-		if err != nil {
-			log.Fatal(err)
-		}
-		time.Sleep(500 * time.Millisecond)
+		// server2.Store(key2, data)
+		// if err != nil {
+		// 	log.Fatal(err)
+		// }
+		// time.Sleep(500 * time.Millisecond)
 
-		if err := server3.store.Delete(cid); err != nil {
-			log.Fatal(err)
-		}
+		// if err := server3.store.Delete(cid); err != nil {
+		// 	log.Fatal(err)
+		// }
 
-		r, fileName, err := server3.Get(cid)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		fmt.Printf("FileName: %q\n", fileName)
-
-		if err := os.MkdirAll("test_output", os.ModePerm); err != nil {
-			log.Fatal(err)
-		}
-
-		f, err := os.Create(fmt.Sprintf("test_output/%s", fileName))
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		io.Copy(f, r)
-
-		// r, err := server1.Get(key2)
+		// r, fileName, err := server3.Get(cid)
 		// if err != nil {
 		// 	log.Fatal(err)
 		// }
 
-		if err := server3.Remove(cid); err != nil {
-			log.Fatal(err)
-		}
+		// fmt.Printf("FileName: %q\n", fileName)
 
-		b, err := io.ReadAll(r)
-		if err != nil {
-			log.Fatal(err)
-		}
+		// if err := os.MkdirAll("test_output", os.ModePerm); err != nil {
+		// 	log.Fatal(err)
+		// }
 
-		fmt.Printf("Length of string is: %d\n", len(b))
+		// f, err := os.Create(fmt.Sprintf("test_output/%s", fileName))
+		// if err != nil {
+		// 	log.Fatal(err)
+		// }
+
+		// io.Copy(f, r)
+
+		// // r, err := server1.Get(key2)
+		// // if err != nil {
+		// // 	log.Fatal(err)
+		// // }
+
+		// if err := server3.Remove(cid); err != nil {
+		// 	log.Fatal(err)
+		// }
+
+		// b, err := io.ReadAll(r)
+		// if err != nil {
+		// 	log.Fatal(err)
+		// }
+
+		// fmt.Printf("Length of string is: %d\n", len(b))
 		//fmt.Println(string(b))
 	}
 	select {}

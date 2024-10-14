@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/gob"
 	"fmt"
 	"io"
 	"log"
@@ -21,6 +20,7 @@ type Network struct {
 	EncKey  []byte
 	Nonce   []byte
 	Nodes   []string
+	Split   bool
 }
 
 var network Network
@@ -58,36 +58,6 @@ type Message struct {
 	Payload any
 }
 
-func (s *FileServer) broadcast(msg *Message) error {
-	buf := new(bytes.Buffer)
-	if err := gob.NewEncoder(buf).Encode(msg); err != nil {
-		return err
-	}
-
-	for _, peer := range s.peers {
-		peer.Send([]byte{p2p.IncomingMessage})
-		if err := peer.Send(buf.Bytes()); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (s *FileServer) sendMessage(peer p2p.Peer, msg *Message) error {
-	buf := new(bytes.Buffer)
-	if err := gob.NewEncoder(buf).Encode(msg); err != nil {
-		return err
-	}
-
-	peer.Send([]byte{p2p.IncomingMessage})
-	if err := peer.Send(buf.Bytes()); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 type MessageGetFile struct {
 	CID string
 }
@@ -98,6 +68,14 @@ type MessageGetFile struct {
 // binary data, decrypts and writes it to the local disk, and returns a reader to
 // that received file.
 func (s *FileServer) Get(cid string) (io.Reader, string, error) {
+	if !(network.Split) {
+		return s.getAll(cid)
+	} else {
+		return s.getSplit(cid)
+	}
+}
+
+func (s *FileServer) getAll(cid string) (io.Reader, string, error) {
 	fmt.Printf("[%s] MSG.CID: (%s)\n", s.Transport.Addr(), cid)
 	if s.store.Has(cid) {
 		fmt.Printf("[%s] serving file (%s) from the local disk\n", s.Transport.Addr(), cid)
@@ -143,7 +121,7 @@ func (s *FileServer) Get(cid string) (io.Reader, string, error) {
 		}
 		fmt.Printf("Key data: %s\n", string(data))
 		fileName := strings.ReplaceAll(string(data), "\x00", "")
-		s.store.writeMetadata(cid, fileName)
+		s.store.writeMetadata(cid, fileName, 0, 0)
 
 		fmt.Printf("[%s] received %d bytes of key over the network from (%s):\n", s.Transport.Addr(), len(data)-1, peer.RemoteAddr())
 
@@ -154,10 +132,17 @@ func (s *FileServer) Get(cid string) (io.Reader, string, error) {
 	return r, f, err
 }
 
+func (s *FileServer) getSplit(cid string) (io.Reader, string, error) {
+	reader := bytes.NewReader([]byte(cid))
+	return reader, "", nil
+}
+
 type MessageStoreFile struct {
-	CID  string
-	Key  string
-	Size int64
+	CID        string
+	Key        string
+	Part       int
+	TotalParts int
+	Size       int64
 }
 
 // Takes a key(file name) and a Reader(data) writes the data to the disk,
@@ -165,6 +150,14 @@ type MessageStoreFile struct {
 // data, then writes encrypted data to the stream to all peers.
 
 func (s *FileServer) Store(key string, r io.Reader) (string, error) {
+	if !(network.Split) {
+		return s.storeAll(key, r)
+	} else {
+		return s.storeSplit(key, r)
+	}
+}
+
+func (s *FileServer) storeAll(key string, r io.Reader) (string, error) {
 	var (
 		buffer     = new(bytes.Buffer)
 		fileBuffer = new(bytes.Buffer)
@@ -172,16 +165,18 @@ func (s *FileServer) Store(key string, r io.Reader) (string, error) {
 		reader     = io.TeeReader(buffer, fileBuffer)
 	)
 	cid := GenerateCID(tee)
-	size, err := s.store.WriteEncrypt(cid, key, reader)
+	size, err := s.store.WriteEncrypt(cid, key, reader, 0, 0)
 	if err != nil {
 		return "", fmt.Errorf("failed to write encrypted data to local disk: %s", err)
 	}
 
 	msg := Message{
 		Payload: MessageStoreFile{
-			CID:  cid,
-			Key:  key,
-			Size: size,
+			CID:        cid,
+			Key:        key,
+			Part:       0,
+			TotalParts: 0,
+			Size:       size,
 		},
 	}
 
@@ -201,6 +196,70 @@ func (s *FileServer) Store(key string, r io.Reader) (string, error) {
 	}
 
 	fmt.Printf("[%s] received and written (%d) bytes to the disk\n", s.Transport.Addr(), n)
+	return cid, nil
+}
+
+func (s *FileServer) storeSplit(key string, r io.Reader) (string, error) {
+	var (
+		buffer = new(bytes.Buffer)
+		reader = io.TeeReader(r, buffer)
+	)
+
+	cid := GenerateCID(reader)
+	parts, err := s.splitFile(buffer)
+	if err != nil {
+		return "", fmt.Errorf("unable to split the file: %s", err)
+	}
+
+	totalParts := len(parts)
+
+	fileBuffer := new(bytes.Buffer)
+	tee := io.TeeReader(parts[0], fileBuffer)
+	size, err := s.store.WriteEncrypt(cid, key, tee, 1, totalParts)
+	if err != nil {
+		return "", fmt.Errorf("failed to write encrypted data to local disk: %s", err)
+	}
+
+	fmt.Printf("[%s] written part %d (%d bytes) to disk\n", s.Transport.Addr(), 1, size)
+
+	parts = parts[1:]
+	partIndex := 2
+	for peerAddr, peer := range s.peers {
+		if len(parts) == 0 {
+			break
+		}
+
+		part := parts[0]
+		partBuffer := new(bytes.Buffer)
+		partSize, _ := io.Copy(partBuffer, part)
+		parts = parts[1:]
+
+		msg := Message{
+			Payload: MessageStoreFile{
+				CID:        cid,
+				Key:        key,
+				Part:       partIndex,
+				TotalParts: totalParts,
+				Size:       int64(partSize),
+			},
+		}
+
+		if err := s.sendMessage(peer, &msg); err != nil {
+			return "", fmt.Errorf("failed to send message to peer %s: %s", peerAddr, err)
+		}
+
+		time.Sleep(5 * time.Millisecond)
+
+		peer.Send([]byte{p2p.IncomingStream})
+		n, err := io.Copy(peer, partBuffer)
+		if err != nil {
+			return "", fmt.Errorf("failed to send part to peer %s: %s", peerAddr, err)
+		}
+
+		fmt.Printf("[%s] sent part %d (%d bytes) to peer %s\n", s.Transport.Addr(), partIndex, n, peer.RemoteAddr())
+		partIndex++
+	}
+
 	return cid, nil
 }
 
@@ -249,6 +308,7 @@ func (s *FileServer) Add(addr string) error {
 			EncKey:  crypto.NewEncryptionKey(),
 			Nonce:   crypto.GenerateNonce(),
 			Nodes:   append(network.Nodes, s.Transport.Addr()),
+			Split:   true,
 		}
 	}
 	network.Nodes = append(network.Nodes, addr)
@@ -294,60 +354,4 @@ func (s *FileServer) Add(addr string) error {
 
 	s.sendMessage(peer, &msg)
 	return nil
-}
-
-func (s *FileServer) Start() error {
-	if err := s.Transport.ListenAndAccept(); err != nil {
-		return err
-	}
-
-	//s.bootstrapNetwork()
-
-	s.loop()
-	return nil
-}
-
-func (s *FileServer) Stop() {
-	if s.quitch != nil {
-		close(s.quitch)
-	}
-}
-
-func (s *FileServer) OnPeer(p p2p.Peer) error {
-	s.peerLock.Lock()
-	defer s.peerLock.Unlock()
-
-	s.peers[p.RemoteAddr().String()] = p
-
-	log.Printf("[%s]: Peer connected: %s\n", p.LocalAddr().String(), p.RemoteAddr().String())
-	return nil
-}
-
-func (s *FileServer) loop() {
-	defer func() {
-		log.Print("File server stopped due to error or quitch channel")
-		s.Transport.Close()
-	}()
-
-	for {
-		select {
-		case rpc := <-s.Transport.Consume():
-			var msg Message
-			if err := gob.NewDecoder(bytes.NewReader(rpc.Payload)).Decode(&msg); err != nil {
-				log.Printf("Failed to decode message: %s\n", err)
-			}
-			if err := s.handleMessage(rpc.From, &msg); err != nil {
-				log.Println("handle message error:", err)
-			}
-		case <-s.quitch:
-			return
-		}
-	}
-}
-
-func init() {
-	gob.Register(MessageStoreFile{})
-	gob.Register(MessageGetFile{})
-	gob.Register(MessageDeleteFile{})
-	gob.Register(MessageAddFile{})
 }
