@@ -7,7 +7,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"strings"
 	"sync"
 	"time"
 
@@ -79,8 +78,8 @@ func (s *FileServer) getAll(cid string) (io.Reader, string, error) {
 	fmt.Printf("[%s] MSG.CID: (%s)\n", s.Transport.Addr(), cid)
 	if s.store.Has(cid) {
 		fmt.Printf("[%s] serving file (%s) from the local disk\n", s.Transport.Addr(), cid)
-		_, r, f, err := s.store.ReadDecrypt(cid)
-		return r, f, err
+		_, r, m, err := s.store.ReadDecrypt(cid)
+		return r, m.FileName, err
 	}
 
 	fmt.Printf("[%s] don't have the file (%s) locally, fetching from the network\n", s.Transport.Addr(), cid)
@@ -98,11 +97,22 @@ func (s *FileServer) getAll(cid string) (io.Reader, string, error) {
 	time.Sleep(time.Millisecond * 500)
 
 	for _, peer := range s.peers {
+		var keySize int64
+		binary.Read(peer, binary.LittleEndian, &keySize)
+		fmt.Printf("Key Size: %d\n", keySize)
+		fmt.Printf("[%s] received %d bytes of key over the network from (%s):\n", s.Transport.Addr(), keySize, peer.RemoteAddr())
+
 		var fileSize int64
-		if err := binary.Read(peer, binary.LittleEndian, &fileSize); err != nil {
-			return nil, "", fmt.Errorf("failed to read file size: %s", err)
-		}
+		binary.Read(peer, binary.LittleEndian, &fileSize)
 		fmt.Printf("File Size: %d\n", fileSize)
+
+		key, err := io.ReadAll(io.LimitReader(peer, keySize))
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to get the key from peer: %s", err)
+		}
+
+		fmt.Printf("Key received: %s\n", key)
+
 		n, err := s.store.writeStream(cid, io.LimitReader(peer, fileSize))
 		if err != nil {
 			return nil, "", err
@@ -110,31 +120,74 @@ func (s *FileServer) getAll(cid string) (io.Reader, string, error) {
 
 		fmt.Printf("[%s] received %d bytes over the network from (%s):\n", s.Transport.Addr(), n, peer.RemoteAddr())
 
-		var keySize int64
-		if err := binary.Read(peer, binary.LittleEndian, &keySize); err != nil {
-			return nil, "", fmt.Errorf("failed to read key size: %s", err)
-		}
-		fmt.Printf("Key size: %d\n", keySize/256)
-		data, err := io.ReadAll(io.LimitReader(peer, int64(keySize/256)+1))
-		if err != nil {
-			return nil, "", fmt.Errorf("failed to read key data: %s", err)
-		}
-		fmt.Printf("Key data: %s\n", string(data))
-		fileName := strings.ReplaceAll(string(data), "\x00", "")
-		s.store.writeMetadata(cid, fileName, 0, 0)
-
-		fmt.Printf("[%s] received %d bytes of key over the network from (%s):\n", s.Transport.Addr(), len(data)-1, peer.RemoteAddr())
+		s.store.writeMetadata(cid, string(key), 0, 0)
 
 		peer.CloseStream()
 	}
 
-	_, r, f, err := s.store.ReadDecrypt(cid)
-	return r, f, err
+	_, r, m, err := s.store.ReadDecrypt(cid)
+	return r, m.FileName, err
 }
 
 func (s *FileServer) getSplit(cid string) (io.Reader, string, error) {
-	reader := bytes.NewReader([]byte(cid))
-	return reader, "", nil
+	var (
+		metadata Metadata
+		reader   io.Reader
+	)
+	fmt.Printf("[%s] MSG.CID: (%s)\n", s.Transport.Addr(), cid)
+	readerMap := make(map[int]io.Reader)
+
+	if s.store.Has(cid) {
+		_, reader, metadata, _ = s.store.ReadDecrypt(cid)
+		readerMap[metadata.Part] = reader
+		fmt.Printf("[%s] serving file part (%d) from the local disk (%s)\n", s.Transport.Addr(), metadata.Part, cid)
+	} else {
+		fmt.Printf("[%s] don't have the file (%s) locally\n", s.Transport.Addr(), cid)
+		return nil, "", nil
+	}
+
+	msg := Message{
+		Payload: MessageGetFile{
+			CID: cid,
+		},
+	}
+
+	if err := s.broadcast(&msg); err != nil {
+		return nil, "", err
+	}
+
+	time.Sleep(time.Millisecond * 500)
+
+	for _, peer := range s.peers {
+		var partNumber int64
+		binary.Read(peer, binary.LittleEndian, &partNumber)
+		fmt.Printf("Part Number: %d\n", partNumber)
+
+		var fileSize int64
+		binary.Read(peer, binary.LittleEndian, &fileSize)
+		fmt.Printf("FileSize: %d\n", fileSize)
+
+		file, err := io.ReadAll(io.LimitReader(peer, fileSize))
+		if err != nil {
+			return nil, "", err
+		}
+
+		readerMap[int(partNumber)] = bytes.NewReader(file)
+		fmt.Printf("ReaderMap: %d\n", len(readerMap))
+		peer.CloseStream()
+	}
+
+	fmt.Println("Length of the reader map: ", len(readerMap))
+	if len(readerMap) != metadata.TotalParts {
+		return nil, "", fmt.Errorf("not all parts received")
+	}
+
+	combinedBuffer, err := s.combineFile(readerMap)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return combinedBuffer, metadata.FileName, nil
 }
 
 type MessageStoreFile struct {

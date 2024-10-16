@@ -77,6 +77,23 @@ func (s *FileServer) splitFile(r io.Reader) ([]io.Reader, error) {
 	return readers, nil
 }
 
+func (s *FileServer) combineFile(readerMap map[int]io.Reader) (io.Reader, error) {
+	combinedBuffer := new(bytes.Buffer)
+
+	for i := 1; i <= len(readerMap); i++ {
+		reader, ok := readerMap[i]
+		if !ok {
+			return nil, fmt.Errorf("missing part %d", i)
+		}
+
+		if _, err := io.Copy(combinedBuffer, reader); err != nil {
+			return nil, fmt.Errorf("failed to combine part %d: %s", i, err)
+		}
+	}
+
+	return combinedBuffer, nil
+}
+
 func (s *FileServer) Start() error {
 	if err := s.Transport.ListenAndAccept(); err != nil {
 		return err

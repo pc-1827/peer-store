@@ -117,24 +117,24 @@ func (s *Store) Read(id string) (int64, io.Reader, error) {
 	return s.readStream(id)
 }
 
-func (s *Store) ReadDecrypt(id string) (int64, io.Reader, string, error) {
+func (s *Store) ReadDecrypt(id string) (int64, io.Reader, Metadata, error) {
 	_, r, err := s.readStream(id)
 	if err != nil {
-		return 0, nil, "", err
+		return 0, nil, Metadata{}, err
 	}
 
 	fileBuffer := new(bytes.Buffer)
 	n, err := decrypt(r, fileBuffer)
 	if err != nil {
-		return 0, nil, "", err
+		return 0, nil, Metadata{}, err
 	}
 
 	metadata, err := s.readMetadata(id)
 	if err != nil {
-		return 0, nil, "", err
+		return 0, nil, Metadata{}, err
 	}
 
-	return int64(n), fileBuffer, metadata.FileName, nil
+	return int64(n), fileBuffer, metadata, nil
 }
 
 func (s *Store) readMetadata(id string) (Metadata, error) {
