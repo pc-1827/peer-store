@@ -8,7 +8,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/pc-1827/distributed-file-system/p2p"
+	"github.com/pc-1827/peer-store/p2p"
 )
 
 func (s *FileServer) handleMessage(from string, msg *Message) error {
@@ -85,12 +85,10 @@ func (s *FileServer) handleMessageGetFile(from string, msg MessageGetFile) error
 	} else {
 		partNumber := int64(metadata.Part)
 
-		// Send partNumber and fileSize using binary.Write
 		peer.Send([]byte{p2p.IncomingStream})
-		binary.Write(peer, binary.LittleEndian, partNumber) // Send partNumber
-		binary.Write(peer, binary.LittleEndian, fileSize)   // Send fileSize
+		binary.Write(peer, binary.LittleEndian, partNumber) 
+		binary.Write(peer, binary.LittleEndian, fileSize)  
 
-		// Send the actual file data
 		n, err := io.Copy(peer, r)
 		if err != nil {
 			return err
@@ -102,83 +100,6 @@ func (s *FileServer) handleMessageGetFile(from string, msg MessageGetFile) error
 	return nil
 }
 
-// func (s *FileServer) handleMessageGetFile(from string, msg MessageGetFile) error {
-// 	fmt.Printf("[%s] MSG.CID: (%s)\n", s.Transport.Addr(), msg.CID)
-// 	if !s.store.Has(msg.CID) {
-// 		return fmt.Errorf("[%s] file (%s) is not present in the disk", s.Transport.Addr(), msg.CID)
-// 	}
-
-// 	metadata, err := s.store.readMetadata(msg.CID)
-// 	if err != nil {
-// 		return fmt.Errorf("error reading metadata: %s", err)
-// 	}
-
-// 	fmt.Printf("[%s] got file part (%d) from the disk, serving over the network (%s)\n", s.Transport.Addr(), metadata.Part, msg.CID)
-// 	fileSize, r, err := s.store.Read(msg.CID)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	keySize := int64(len(metadata.FileName))
-
-// 	if rc, ok := r.(io.ReadCloser); ok {
-// 		defer rc.Close()
-// 	}
-
-// 	fmt.Printf("From message: %s\n", from)
-
-// 	peer, ok := s.peers[from]
-// 	if !ok {
-// 		return fmt.Errorf("peer (%s) is not in peer map", from)
-// 	}
-
-// 	time.Sleep(100 * time.Millisecond)
-
-// 	if !(network.Split) {
-// 		peer.Send([]byte{p2p.IncomingStream})
-// 		binary.Write(peer, binary.LittleEndian, fileSize)
-
-// 		n, err := io.Copy(peer, r)
-// 		if err != nil {
-// 			return err
-// 		}
-
-// 		fmt.Printf("[%s] sent file %d bytes over the network to %s\n", s.Transport.Addr(), n, from)
-
-// 		peer.Send([]byte{p2p.IncomingStream})
-// 		binary.Write(peer, binary.LittleEndian, keySize)
-
-// 		n, err = io.Copy(peer, bytes.NewReader([]byte(metadata.FileName)))
-// 		if err != nil {
-// 			return err
-// 		}
-
-// 		fmt.Printf("[%s] written %d bytes of key over the network to %s\n", s.Transport.Addr(), n, from)
-// 	} else {
-// 		fmt.Println("PartNumber sent:", metadata.Part)
-// 		partNumber := int64(metadata.Part)
-// 		peer.Send([]byte{p2p.IncomingStream})
-// 		binary.Write(peer, binary.LittleEndian, partNumber)
-// 		time.Sleep(time.Millisecond * 500)
-// 		io.Copy(peer, bytes.NewReader([]byte(string(metadata.Part))))
-
-// 		fmt.Printf("[%s] sent file part %d over the network to %s\n", s.Transport.Addr(), metadata.Part, from)
-
-// 		peer.Send([]byte{p2p.IncomingStream})
-// 		binary.Write(peer, binary.LittleEndian, fileSize)
-
-// 		n, err := io.Copy(peer, r)
-// 		if err != nil {
-// 			return err
-// 		}
-
-// 		fmt.Printf("[%s] written %d bytes over the network to %s\n", s.Transport.Addr(), n, from)
-
-// 	}
-
-// 	return nil
-// }
-
 // Gets the peer in the received message and writes the data received to
 // the local disk.
 func (s *FileServer) handleMessageStoreFile(from string, msg MessageStoreFile) error {
@@ -189,13 +110,11 @@ func (s *FileServer) handleMessageStoreFile(from string, msg MessageStoreFile) e
 
 	fmt.Println(msg)
 
-	// Create a buffer to store the received data
 	dataBuffer := new(bytes.Buffer)
 	if _, err := io.Copy(dataBuffer, io.LimitReader(peer, msg.Size)); err != nil {
 		return fmt.Errorf("failed to read data: %s", err)
 	}
 
-	// We need to write encrypted data to disk
 	n, err := s.store.WriteEncrypt(msg.CID, msg.Key, dataBuffer, msg.Part, msg.TotalParts)
 	if err != nil {
 		return err

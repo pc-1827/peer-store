@@ -7,7 +7,7 @@ import (
 	"io"
 	"log"
 
-	"github.com/pc-1827/distributed-file-system/p2p"
+	"github.com/pc-1827/peer-store/p2p"
 )
 
 func (s *FileServer) broadcast(msg *Message) error {

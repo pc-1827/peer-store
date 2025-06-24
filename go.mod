@@ -1,4 +1,4 @@
-module github.com/pc-1827/distributed-file-system
+module github.com/pc-1827/peer-store
 
 go 1.21.5
 

@@ -7,7 +7,7 @@ import (
 	"io"
 	"log"
 
-	"github.com/pc-1827/distributed-file-system/crypto"
+	"github.com/pc-1827/peer-store/crypto"
 )
 
 func GenerateCID(r io.Reader) string {

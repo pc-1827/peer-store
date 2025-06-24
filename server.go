@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pc-1827/distributed-file-system/crypto"
-	"github.com/pc-1827/distributed-file-system/p2p"
+	"github.com/pc-1827/peer-store/crypto"
+	"github.com/pc-1827/peer-store/p2p"
 )
 
 type Network struct {
