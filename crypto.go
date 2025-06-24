@@ -34,6 +34,12 @@ func encrypt(src io.Reader, dst io.Writer) (int, error) {
 			return 0, fmt.Errorf("failed to encrypt data: %s", err)
 		}
 		return n, nil
+	} else if network.EncType == "None" {
+		n, err := io.Copy(dst, src)
+		if err != nil {
+			return 0, fmt.Errorf("failed to encrypt data: %s", err)
+		}
+		return int(n), nil
 	}
 	return 0, nil
 }
@@ -51,6 +57,12 @@ func decrypt(src io.Reader, dst io.Writer) (int, error) {
 			return 0, fmt.Errorf("failed to decrypt data: %s", err)
 		}
 		return n, nil
+	} else if network.EncType == "None" {
+		n, err := io.Copy(dst, src)
+		if err != nil {
+			return 0, fmt.Errorf("failed to decrypt data: %s", err)
+		}
+		return int(n), nil
 	}
 	return 0, nil
 }

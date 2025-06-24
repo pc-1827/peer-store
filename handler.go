@@ -189,7 +189,14 @@ func (s *FileServer) handleMessageStoreFile(from string, msg MessageStoreFile) e
 
 	fmt.Println(msg)
 
-	n, err := s.store.Write(msg.CID, msg.Key, io.LimitReader(peer, msg.Size), msg.Part, msg.TotalParts)
+	// Create a buffer to store the received data
+	dataBuffer := new(bytes.Buffer)
+	if _, err := io.Copy(dataBuffer, io.LimitReader(peer, msg.Size)); err != nil {
+		return fmt.Errorf("failed to read data: %s", err)
+	}
+
+	// We need to write encrypted data to disk
+	n, err := s.store.WriteEncrypt(msg.CID, msg.Key, dataBuffer, msg.Part, msg.TotalParts)
 	if err != nil {
 		return err
 	}

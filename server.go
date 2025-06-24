@@ -130,22 +130,25 @@ func (s *FileServer) getAll(cid string) (io.Reader, string, error) {
 }
 
 func (s *FileServer) getSplit(cid string) (io.Reader, string, error) {
-	var (
-		metadata Metadata
-		reader   io.Reader
-	)
+	var metadata Metadata
+
 	fmt.Printf("[%s] MSG.CID: (%s)\n", s.Transport.Addr(), cid)
 	readerMap := make(map[int]io.Reader)
 
+	// Get local part if available
 	if s.store.Has(cid) {
-		_, reader, metadata, _ = s.store.ReadDecrypt(cid)
-		readerMap[metadata.Part] = reader
-		fmt.Printf("[%s] serving file part (%d) from the local disk (%s)\n", s.Transport.Addr(), metadata.Part, cid)
-	} else {
-		fmt.Printf("[%s] don't have the file (%s) locally\n", s.Transport.Addr(), cid)
-		return nil, "", nil
+		_, reader, localMeta, err := s.store.ReadDecrypt(cid)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to read local part: %s", err)
+		}
+
+		readerMap[localMeta.Part] = reader
+		metadata = localMeta
+		fmt.Printf("[%s] serving file part %d from local disk (%s) - %d bytes\n",
+			s.Transport.Addr(), localMeta.Part, cid, reader.(*bytes.Buffer).Len())
 	}
 
+	// Request missing parts from peers
 	msg := Message{
 		Payload: MessageGetFile{
 			CID: cid,
@@ -156,32 +159,72 @@ func (s *FileServer) getSplit(cid string) (io.Reader, string, error) {
 		return nil, "", err
 	}
 
-	time.Sleep(time.Millisecond * 500)
+	// Wait for responses
+	time.Sleep(500 * time.Millisecond)
 
-	for _, peer := range s.peers {
+	// Receive parts from peers
+	for peerAddr, peer := range s.peers {
 		var partNumber int64
 		binary.Read(peer, binary.LittleEndian, &partNumber)
-		fmt.Printf("Part Number: %d\n", partNumber)
 
 		var fileSize int64
 		binary.Read(peer, binary.LittleEndian, &fileSize)
-		fmt.Printf("FileSize: %d\n", fileSize)
 
-		file, err := io.ReadAll(io.LimitReader(peer, fileSize))
+		// Read the encrypted data
+		encData, err := io.ReadAll(io.LimitReader(peer, fileSize))
 		if err != nil {
-			return nil, "", err
+			log.Printf("Error reading part %d from peer %s: %s",
+				partNumber, peerAddr, err)
+			peer.CloseStream()
+			continue
 		}
 
-		readerMap[int(partNumber)] = bytes.NewReader(file)
-		fmt.Printf("ReaderMap: %d\n", len(readerMap))
+		// Decrypt the data
+		decryptedBuffer := new(bytes.Buffer)
+		_, err = decrypt(bytes.NewReader(encData), decryptedBuffer)
+		if err != nil {
+			log.Printf("Error decrypting part %d from peer %s: %s",
+				partNumber, peerAddr, err)
+			peer.CloseStream()
+			continue
+		}
+
+		fmt.Printf("[%s] received and decrypted part %d (%d bytes) from peer %s\n",
+			s.Transport.Addr(), partNumber, decryptedBuffer.Len(), peerAddr)
+
+		readerMap[int(partNumber)] = decryptedBuffer
+
+		// Set metadata if not already set
+		if metadata.TotalParts == 0 {
+			meta, err := s.store.readMetadata(cid)
+			if err == nil {
+				metadata = meta
+			}
+		}
+
 		peer.CloseStream()
 	}
 
-	fmt.Println("Length of the reader map: ", len(readerMap))
-	if len(readerMap) != metadata.TotalParts {
-		return nil, "", fmt.Errorf("not all parts received")
+	// Verify we have all parts
+	if len(readerMap) == 0 {
+		return nil, "", fmt.Errorf("no parts received")
 	}
 
+	if metadata.TotalParts == 0 {
+		return nil, "", fmt.Errorf("missing metadata")
+	}
+
+	if len(readerMap) != metadata.TotalParts {
+		fmt.Printf("[%s] collected %d/%d parts for file %s\n",
+			s.Transport.Addr(), len(readerMap), metadata.TotalParts, cid)
+		return nil, "", fmt.Errorf("incomplete file: received %d/%d parts",
+			len(readerMap), metadata.TotalParts)
+	}
+
+	fmt.Printf("[%s] collected %d/%d parts for file %s\n",
+		s.Transport.Addr(), len(readerMap), metadata.TotalParts, cid)
+
+	// Combine all parts
 	combinedBuffer, err := s.combineFile(readerMap)
 	if err != nil {
 		return nil, "", err
@@ -357,7 +400,7 @@ func (s *FileServer) Add(addr string) error {
 
 	if len(network.Nodes) == 0 {
 		network = Network{
-			EncType: "CC20",
+			EncType: "AES",
 			EncKey:  crypto.NewEncryptionKey(),
 			Nonce:   crypto.GenerateNonce(),
 			Nodes:   append(network.Nodes, s.Transport.Addr()),
