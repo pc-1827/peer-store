@@ -94,16 +94,14 @@ func (s *FileServer) combineFile(readerMap map[int]io.Reader) (io.Reader, error)
 	return combinedBuffer, nil
 }
 
-func (s *FileServer) Start() error {
-	if err := s.Transport.ListenAndAccept(); err != nil {
-		return err
-	}
+// func (s *FileServer) Start() error {
+// 	if err := s.Transport.ListenAndAccept(); err != nil {
+// 		return err
+// 	}
 
-	//s.bootstrapNetwork()
-
-	s.loop()
-	return nil
-}
+// 	s.loop()
+// 	return nil
+// }
 
 func (s *FileServer) Stop() {
 	if s.quitch != nil {
@@ -141,11 +139,4 @@ func (s *FileServer) loop() {
 			return
 		}
 	}
-}
-
-func init() {
-	gob.Register(MessageStoreFile{})
-	gob.Register(MessageGetFile{})
-	gob.Register(MessageDeleteFile{})
-	gob.Register(MessageAddFile{})
 }

@@ -264,3 +264,72 @@ func (s *Store) writeStream(id string, r io.Reader) (int64, error) {
 
 	return io.Copy(f, r)
 }
+
+// func (s *Store) WriteEncrypt(cid, key string, r io.Reader, part, totalParts int) (int64, error) {
+// 	// Prepare the path
+// 	pathKey := s.PathTransformFunc(cid)
+// 	fullDir := fmt.Sprintf("%s/%s", s.Root, cid)
+
+// 	// Create directory if it doesn't exist
+// 	if err := os.MkdirAll(fullDir, 0755); err != nil {
+// 		return 0, fmt.Errorf("failed to create directory %s: %w", fullDir, err)
+// 	}
+
+// 	filePath := fmt.Sprintf("%s/%s", fullDir, pathKey.PathName)
+// 	if err := os.MkdirAll(filePath, 0755); err != nil {
+// 		return 0, fmt.Errorf("failed to create file directory: %w", err)
+// 	}
+
+// 	// Create the file path
+// 	fullFilePath := fmt.Sprintf("%s/%s", filePath, pathKey.FileName)
+// 	log.Printf("Creating file at path: %s", fullFilePath)
+
+// 	// Create the file
+// 	f, err := os.Create(fullFilePath)
+// 	if err != nil {
+// 		return 0, fmt.Errorf("failed to create file: %w", err)
+// 	}
+// 	defer f.Close()
+
+// 	// Read the data
+// 	fileData, err := io.ReadAll(r)
+// 	if err != nil {
+// 		return 0, fmt.Errorf("failed to read file data: %w", err)
+// 	}
+
+// 	log.Printf("Writing %d bytes to file %s", len(fileData), fullFilePath)
+
+// 	// Write the data directly without encryption for now
+// 	n, err := f.Write(fileData)
+// 	if err != nil {
+// 		return 0, fmt.Errorf("failed to write data: %w", err)
+// 	}
+
+// 	log.Printf("Wrote %d bytes to file", n)
+
+// 	// Write metadata
+// 	meta := Metadata{
+// 		CID:        cid,
+// 		FileID:     pathKey.FileName,
+// 		FileName:   key,
+// 		Part:       part,
+// 		TotalParts: totalParts,
+// 	}
+
+// 	// Create metadata path in the same directory
+// 	metaFilePath := fmt.Sprintf("%s/metadata", filePath)
+// 	log.Printf("Creating metadata file at: %s", metaFilePath)
+
+// 	metaFile, err := os.Create(metaFilePath)
+// 	if err != nil {
+// 		return 0, fmt.Errorf("failed to create metadata file: %w", err)
+// 	}
+// 	defer metaFile.Close()
+
+// 	// Encode metadata directly
+// 	if err := gob.NewEncoder(metaFile).Encode(meta); err != nil {
+// 		return 0, fmt.Errorf("failed to encode metadata: %w", err)
+// 	}
+
+// 	return int64(n), nil
+// }
